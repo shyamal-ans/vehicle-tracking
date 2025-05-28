@@ -2,6 +2,7 @@
 
 import { usePostSmartVehiclesMutation } from "@/slices/smartVehicleSlice";
 import React, { useEffect, useState } from "react";
+import * as XLSX from "xlsx";
 
 type Vehicle = {
   ip: string;
@@ -13,8 +14,6 @@ type Vehicle = {
   branchName: string;
   projectName: string;
   createdDate: string;
-  resellerName: string;
-  region: string;
 };
 
 const VehicleTrackingDashboard = () => {
@@ -25,6 +24,9 @@ const VehicleTrackingDashboard = () => {
   const [selectedVehicles, setSelectedVehicles] = useState<Set<string>>(
     new Set()
   );
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
 
   const [fetchVehicles, { data, isLoading, error }] =
     usePostSmartVehiclesMutation();
@@ -45,16 +47,19 @@ const VehicleTrackingDashboard = () => {
 
   useEffect(() => {
     if (data?.data) {
-      setFilteredVehicles(data.data); // Populate filteredVehicles with the fetched data
+      setFilteredVehicles(data.data);
+      setVehicles(data?.data);
     }
   }, [data]);
 
   useEffect(() => {
-    const filtered = filteredVehicles.filter((v) =>
-      v.vehicleNo.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filtered = vehicles.filter((v) => {
+      const values = Object.values(v).join(" ").toLowerCase();
+      return values.includes(searchQuery.toLowerCase());
+    });
     setFilteredVehicles(filtered);
-  }, [searchQuery]);
+    setCurrentPage(1);
+  }, [searchQuery, vehicles]);
 
   const handleCheckboxChange = (vehicleNo: string) => {
     setSelectedVehicles((prev) => {
@@ -69,6 +74,39 @@ const VehicleTrackingDashboard = () => {
     setSearchQuery("");
     setFilteredVehicles(vehicles);
     setShowFilters(false);
+  };
+
+  const paginatedVehicles = filteredVehicles.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  const currentVehicleNos = paginatedVehicles.map((v) => v.vehicleNo);
+  const areAllSelected = currentVehicleNos.every((no) =>
+    selectedVehicles.has(no)
+  );
+
+  const handleSelectAllOnPage = () => {
+    setSelectedVehicles((prev) => {
+      const newSet = new Set(prev);
+      if (areAllSelected) {
+        currentVehicleNos.forEach((no) => newSet.delete(no));
+      } else {
+        currentVehicleNos.forEach((no) => newSet.add(no));
+      }
+      return newSet;
+    });
+  };
+
+  const exportSelectedVehicles = () => {
+    const selected = vehicles.filter((v) => selectedVehicles.has(v.vehicleNo));
+    if (selected.length === 0) return;
+
+    const worksheet = XLSX.utils.json_to_sheet(selected);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
+
+    XLSX.writeFile(workbook, "selected_vehicles.xlsx");
   };
 
   return (
@@ -90,16 +128,23 @@ const VehicleTrackingDashboard = () => {
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setShowFilters((prev) => !prev)}
-            className="bg-blue-600 text-white px-4 py-2 rounded"
+            className="bg-blue-600 text-white px-4 py-2 rounded cursor-pointer"
           >
             {showFilters ? "Hide Filters" : "Show Filters"}
           </button>
-          <button className="bg-green-600 text-white px-4 py-2 rounded">
+          {/* <button className="bg-green-600 text-white px-4 py-2 rounded">
+            Export Selected ({selectedVehicles.size})
+          </button> */}
+          <button
+            className="bg-green-600 text-white px-4 py-2 rounded cursor-pointer"
+            onClick={exportSelectedVehicles}
+          >
             Export Selected ({selectedVehicles.size})
           </button>
+
           <button
             onClick={resetFilters}
-            className="bg-gray-300 text-black px-4 py-2 rounded"
+            className="bg-gray-300 text-black px-4 py-2 rounded cursor-pointer"
           >
             Reset
           </button>
@@ -108,7 +153,7 @@ const VehicleTrackingDashboard = () => {
 
       {/* Filter Dropdowns */}
       {showFilters && (
-        <div className="bg-white rounded-lg shadow p-4 mb-4 grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="bg-white text-black rounded-lg shadow p-4 mb-4 grid grid-cols-2 md:grid-cols-5 gap-4">
           <select className="border px-2 py-2 rounded">
             <option value="">All Servers</option>
             <option value="Server1">Server1</option>
@@ -137,18 +182,22 @@ const VehicleTrackingDashboard = () => {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-lg shadow overflow-x-auto">
+      <div className="bg-white text-black rounded-lg shadow overflow-x-auto">
         {/* <table className="min-w-full text-sm">
           
         </table> */}
 
         {/* Scrollable table body */}
-        <div className="max-h-[400px] overflow-y-auto">
+        <div className="max-h-[500px] overflow-y-auto">
           <table className="min-w-full text-sm">
             <thead className="sticky top-0">
               <tr className="bg-gray-100 text-left">
                 <th className="p-2">
-                  <input type="checkbox" disabled />
+                  <input
+                    type="checkbox"
+                    checked={areAllSelected}
+                    onChange={handleSelectAllOnPage}
+                  />
                 </th>
                 <th className="p-2">SERVER</th>
                 <th className="p-2">VEHICLE NO</th>
@@ -162,8 +211,8 @@ const VehicleTrackingDashboard = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredVehicles.length > 0 ? (
-                filteredVehicles.map((v) => (
+              {paginatedVehicles.length > 0 ? (
+                paginatedVehicles.map((v) => (
                   <tr key={v.imeiNo} className="border-t">
                     <td className="p-2">
                       <input
@@ -194,8 +243,37 @@ const VehicleTrackingDashboard = () => {
           </table>
         </div>
       </div>
+      <div className="mt-4 flex justify-center items-center gap-2">
+        <button
+          onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+          disabled={currentPage === 1}
+          className="px-3 py-1 border rounded disabled:opacity-50"
+        >
+          Previous
+        </button>
+
+        <span className="px-2">
+          Page {currentPage} of {Math.ceil(filteredVehicles.length / pageSize)}
+        </span>
+
+        <button
+          onClick={() =>
+            setCurrentPage((prev) =>
+              prev < Math.ceil(filteredVehicles.length / pageSize)
+                ? prev + 1
+                : prev
+            )
+          }
+          disabled={
+            currentPage === Math.ceil(filteredVehicles.length / pageSize)
+          }
+          className="px-3 py-1 border rounded disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
     </div>
   );
 };
 
-export default VehicleTrackingDashboard;
+export default VehicleTrackingDashboard;  

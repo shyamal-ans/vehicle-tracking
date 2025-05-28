@@ -12,7 +12,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Smart City",
+  title: "ANS",
   description: "Admin Panel",
 };
 
