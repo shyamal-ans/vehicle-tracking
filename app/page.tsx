@@ -21,7 +21,7 @@ const VehicleTrackingDashboard = () => {
   const [filteredVehicles, setFilteredVehicles] = useState<Vehicle[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedVehicles, setSelectedVehicles] = useState<Set<string>>(
+  const [selectedVehicles, setSelectedVehicles] = useState<Set<number>>(
     new Set()
   );
 
@@ -39,7 +39,7 @@ const VehicleTrackingDashboard = () => {
       startDate: "2025-05-10 00:00:00",
       endDate: "2025-05-19 23:59:59",
       pageNo: 1,
-      pageSize: 100,
+      pageSize: 400,
     };
 
     fetchVehicles(postBody);
@@ -61,11 +61,11 @@ const VehicleTrackingDashboard = () => {
     setCurrentPage(1);
   }, [searchQuery, vehicles]);
 
-  const handleCheckboxChange = (vehicleNo: string) => {
+  const handleCheckboxChange = (imeiNo: number) => {
     setSelectedVehicles((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(vehicleNo)) newSet.delete(vehicleNo);
-      else newSet.add(vehicleNo);
+      if (newSet.has(imeiNo)) newSet.delete(imeiNo);
+      else newSet.add(imeiNo);
       return newSet;
     });
   };
@@ -81,25 +81,49 @@ const VehicleTrackingDashboard = () => {
     currentPage * pageSize
   );
 
-  const currentVehicleNos = paginatedVehicles.map((v) => v.vehicleNo);
-  const areAllSelected = currentVehicleNos.every((no) =>
-    selectedVehicles.has(no)
+  const currentImeiNos = paginatedVehicles.map((v) => v.imeiNo);
+  const areAllSelected = currentImeiNos.every((imei) =>
+    selectedVehicles.has(imei)
   );
 
   const handleSelectAllOnPage = () => {
     setSelectedVehicles((prev) => {
       const newSet = new Set(prev);
       if (areAllSelected) {
-        currentVehicleNos.forEach((no) => newSet.delete(no));
+        currentImeiNos.forEach((imei) => newSet.delete(imei));
       } else {
-        currentVehicleNos.forEach((no) => newSet.add(no));
+        currentImeiNos.forEach((imei) => newSet.add(imei));
       }
       return newSet;
     });
   };
 
+  // const exportSelectedVehicles = () => {
+  //   const selected = vehicles.filter((v) => selectedVehicles.has(v.imeiNo));
+  //   if (selected.length === 0) return;
+
+  //   const worksheet = XLSX.utils.json_to_sheet(selected);
+  //   const workbook = XLSX.utils.book_new();
+  //   XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
+
+  //   XLSX.writeFile(workbook, "selected_vehicles.xlsx");
+  // };
+
   const exportSelectedVehicles = () => {
-    const selected = vehicles.filter((v) => selectedVehicles.has(v.vehicleNo));
+    const selected = vehicles
+      .filter((v) => selectedVehicles.has(v.imeiNo))
+      .map((v) => ({
+        SERVER: v.ip,
+        "VEHICLE NO": v.vehicleNo,
+        IMEI: v.imeiNo,
+        STATUS: v.status || "-",
+        TYPE: v.type || "-",
+        COMPANY: v.companyName,
+        BRANCH: v.branchName,
+        PROJECT: v.projectName,
+        "INSTALLATION DATE": v.createdDate,
+      }));
+
     if (selected.length === 0) return;
 
     const worksheet = XLSX.utils.json_to_sheet(selected);
@@ -132,9 +156,6 @@ const VehicleTrackingDashboard = () => {
           >
             {showFilters ? "Hide Filters" : "Show Filters"}
           </button>
-          {/* <button className="bg-green-600 text-white px-4 py-2 rounded">
-            Export Selected ({selectedVehicles.size})
-          </button> */}
           <button
             className="bg-green-600 text-white px-4 py-2 rounded cursor-pointer"
             onClick={exportSelectedVehicles}
@@ -188,7 +209,7 @@ const VehicleTrackingDashboard = () => {
         </table> */}
 
         {/* Scrollable table body */}
-        <div className="max-h-[500px] overflow-y-auto">
+        <div className="max-h-[600px] overflow-y-auto">
           <table className="min-w-full text-sm">
             <thead className="sticky top-0">
               <tr className="bg-gray-100 text-left">
@@ -217,8 +238,8 @@ const VehicleTrackingDashboard = () => {
                     <td className="p-2">
                       <input
                         type="checkbox"
-                        checked={selectedVehicles.has(v.vehicleNo)}
-                        onChange={() => handleCheckboxChange(v.vehicleNo)}
+                        checked={selectedVehicles.has(v.imeiNo)}
+                        onChange={() => handleCheckboxChange(v.imeiNo)}
                       />
                     </td>
                     <td className="p-2">{v.ip}</td>
@@ -247,7 +268,7 @@ const VehicleTrackingDashboard = () => {
         <button
           onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
           disabled={currentPage === 1}
-          className="px-3 py-1 border rounded disabled:opacity-50"
+          className="px-3 py-1 border rounded disabled:opacity-50 cursor-pointer"
         >
           Previous
         </button>
@@ -267,7 +288,7 @@ const VehicleTrackingDashboard = () => {
           disabled={
             currentPage === Math.ceil(filteredVehicles.length / pageSize)
           }
-          className="px-3 py-1 border rounded disabled:opacity-50"
+          className="px-3 py-1 border rounded disabled:opacity-50 cursor-pointer"
         >
           Next
         </button>
@@ -276,4 +297,4 @@ const VehicleTrackingDashboard = () => {
   );
 };
 
-export default VehicleTrackingDashboard;  
+export default VehicleTrackingDashboard;

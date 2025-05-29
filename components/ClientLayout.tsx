@@ -39,7 +39,7 @@ export default function ClientLayout({
           {/* Main Content */}
           <div className="flex-1 flex flex-col">
             {/* Header */}
-            <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+            {/* <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} /> */}
 
             {/* Content */}
             <main style={{ width: sidebarOpen ? "calc(100vw - 295px)" : "calc(100vw - 64px)" }} className={`p-6 h-screen`}>

@@ -17,7 +17,7 @@ export async function POST() {
 
     // Call external API
     const response = await axios.post(
-      "http://13.232.146.139:8087/billingservice/admin/vehicle_details",
+      "http://13.232.146.139:8087/billingservice/admin/vehicle_details?pageNo=1&pageSize=400",
       body,
       {
         headers: { "Content-Type": "application/json" },
