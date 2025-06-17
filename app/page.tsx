@@ -39,7 +39,7 @@ const VehicleTrackingDashboard = () => {
       startDate: "2025-05-10 00:00:00",
       endDate: "2025-05-19 23:59:59",
       pageNo: 1,
-      pageSize: 400,
+      pageSize: 60000,
     };
 
     fetchVehicles(postBody);

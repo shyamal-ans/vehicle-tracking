@@ -1,43 +1,68 @@
-import axios from "axios";
+import { NextResponse } from 'next/server';
 
-export async function POST() {
+const credentials = {
+  username: 'shyamal@ansgujarat.in',
+  password: 'Shyamal@1986',
+};
+
+const JSESSIONID = '7120FB4EB2CE3E647CE658410348647D';
+
+async function getAuthCode() {
+  const res = await fetch('http://13.233.185.89/webservice?token=generateAccessToken', {
+    method: 'POST', // ✅ Use POST here instead of GET
+    headers: {
+      'Content-Type': 'application/json',
+      'Cookie': `JSESSIONID=${JSESSIONID}`,
+    },
+    body: JSON.stringify(credentials),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Auth token failed: ${res.status} - ${errText}`);
+  }
+
+  const data = await res.json();
+  const token = data?.data?.token;
+  if (!token) throw new Error('Auth token not found');
+  return token;
+}
+
+export async function GET() {
   try {
-    // Read JSON body from incoming request (optional if you want dynamic data)
-    // const body = await request.json();
+    const token = await getAuthCode();
+    return NextResponse.json({ token });
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
 
-    // For now, using static body as per your example
-    const body = {
-      adminCode: "CUS-UT002",
-      projectId: "16,17,21,22,34,37,40,41,46,48,49,52,53,58,59,72,77",
-      startDate: "2025-05-10 00:00:00",
-      endDate: "2025-05-19 23:59:59",
-      pageNo: 1,
-      pageSize: 100,
-    };
+export async function POST(request) {
+  try {
+    const token = await getAuthCode();
+    const payload = await request.json();
 
-    // Call external API
-    const response = await axios.post(
-      "http://13.232.146.139:8087/billingservice/admin/vehicle_details?pageNo=1&pageSize=400",
-      body,
-      {
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-
-    // Return JSON response
-    return new Response(JSON.stringify(response.data), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch('http://13.233.185.89/webservice?token=getAdminData', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'auth-code': token,
+        'Cookie': `JSESSIONID=${JSESSIONID}`,
+      },
+      body: JSON.stringify(payload),
     });
-  } catch (error) {
-    console.error("Error fetching vehicle details:", error.message);
 
-    return new Response(
-      JSON.stringify({ error: "Failed to fetch vehicle details" }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    if (!res.ok) {
+      const errText = await res.text();
+      return NextResponse.json(
+        { error: `Data fetch failed: ${res.status} - ${errText}` },
+        { status: 500 }
+      );
+    }
+
+    const data = await res.json();
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
