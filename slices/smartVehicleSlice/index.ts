@@ -9,15 +9,23 @@ type VehicleAPIResponse = {
 };
 
 type Vehicle = {
-  ip:string;
-  vehicleNo: string;
-  imeiNo: number;
+  vehicleName: string;
+  resellerName: string;
+  ip: string;
   companyName: string;
-  status: string;
-  type:string;
+  status?: string;
+  type?: string;
   branchName: string;
   projectName: string;
   createdDate: string;
+  InActiveDays: number;
+  adminName: string;
+  vehicleNo: string;
+  imeiNo: number;
+  region: string;
+  projectId: string;
+  simNo: string;
+  username: string;
 };
 
 type VehiclePostParams = {

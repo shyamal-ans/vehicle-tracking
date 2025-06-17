@@ -4,16 +4,36 @@ import { usePostSmartVehiclesMutation } from "@/slices/smartVehicleSlice";
 import React, { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 
+// type Vehicle = {
+//   ip: string;
+//   vehicleNo: string;
+//   imeiNo: number;
+//   companyName: string;
+//   status: string;
+//   type: string;
+//   branchName: string;
+//   projectName: string;
+//   createdDate: string;
+// };
+
 type Vehicle = {
+  vehicleName: string;
+  resellerName: string;
   ip: string;
-  vehicleNo: string;
-  imeiNo: number;
   companyName: string;
-  status: string;
-  type: string;
   branchName: string;
-  projectName: string;
+  InActiveDays: number;
+  adminName: string;
+  vehicleNo: string;
   createdDate: string;
+  imeiNo: number;
+  projectName: string;
+  region: string;
+  projectId: string;
+  simNo: string;
+  username: string;
+  status?: string;
+  type?: string;
 };
 
 const pageSize = 100;
@@ -123,15 +143,21 @@ const VehicleTrackingDashboard = () => {
     const selected = vehicles
       .filter((v) => selectedVehicles.has(v.imeiNo))
       .map((v) => ({
-        SERVER: v.ip,
-        "VEHICLE NO": v.vehicleNo,
+        "Vehicle Name": v.vehicleName,
+        Reseller: v.resellerName,
+        IP: v.ip,
+        Company: v.companyName,
+        Branch: v.branchName,
+        "Inactive Days": v.InActiveDays,
+        Admin: v.adminName,
+        "Vehicle No": v.vehicleNo,
+        "Created Date": v.createdDate,
         IMEI: v.imeiNo,
-        STATUS: v.status || "-",
-        TYPE: v.type || "-",
-        COMPANY: v.companyName,
-        BRANCH: v.branchName,
-        PROJECT: v.projectName,
-        "INSTALLATION DATE": v.createdDate,
+        Project: v.projectName,
+        Region: v.region,
+        "Project ID": v.projectId,
+        "SIM No": v.simNo,
+        Username: v.username,
       }));
 
     if (selected.length === 0) return;
@@ -229,17 +255,24 @@ const VehicleTrackingDashboard = () => {
                     onChange={handleSelectAllOnPage}
                   />
                 </th>
-                <th className="p-2">SERVER</th>
-                <th className="p-2">VEHICLE NO</th>
+                <th className="p-2">Vehicle Name</th>
+                <th className="p-2">Reseller</th>
+                <th className="p-2">IP</th>
+                <th className="p-2">Company</th>
+                <th className="p-2">Branch</th>
+                <th className="p-2">Inactive Days</th>
+                <th className="p-2">Admin</th>
+                <th className="p-2">Vehicle No</th>
+                <th className="p-2">Created Date</th>
                 <th className="p-2">IMEI</th>
-                {/* <th className="p-2">STATUS</th> */}
-                {/* <th className="p-2">TYPE</th> */}
-                <th className="p-2">COMPANY</th>
-                <th className="p-2">BRANCH</th>
-                <th className="p-2">PROJECT</th>
-                <th className="p-2">INSTALLATION DATE</th>
+                <th className="p-2">Project</th>
+                <th className="p-2">Region</th>
+                <th className="p-2">Project ID</th>
+                <th className="p-2">SIM No</th>
+                <th className="p-2">Username</th>
               </tr>
             </thead>
+
             <tbody>
               {paginatedVehicles.length > 0 ? (
                 paginatedVehicles.map((v) => (
@@ -251,20 +284,26 @@ const VehicleTrackingDashboard = () => {
                         onChange={() => handleCheckboxChange(v.imeiNo)}
                       />
                     </td>
+                    <td className="p-2">{v.vehicleName}</td>
+                    <td className="p-2">{v.resellerName}</td>
                     <td className="p-2">{v.ip}</td>
-                    <td className="p-2">{v.vehicleNo}</td>
-                    <td className="p-2">{v.imeiNo}</td>
-                    {/* <td className="p-2">{v.status || "-"}</td> */}
-                    {/* <td className="p-2">{v.type || "-"}</td> */}
                     <td className="p-2">{v.companyName}</td>
                     <td className="p-2">{v.branchName}</td>
-                    <td className="p-2">{v.projectName}</td>
+                    <td className="p-2">{v.InActiveDays}</td>
+                    <td className="p-2">{v.adminName}</td>
+                    <td className="p-2">{v.vehicleNo}</td>
                     <td className="p-2">{v.createdDate}</td>
+                    <td className="p-2">{v.imeiNo}</td>
+                    <td className="p-2">{v.projectName}</td>
+                    <td className="p-2">{v.region}</td>
+                    <td className="p-2">{v.projectId}</td>
+                    <td className="p-2">{v.simNo}</td>
+                    <td className="p-2">{v.username}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={10} className="p-4 text-center text-gray-500">
+                  <td colSpan={16} className="p-4 text-center text-gray-500">
                     No vehicles found matching your criteria
                   </td>
                 </tr>
