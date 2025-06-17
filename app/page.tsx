@@ -4,18 +4,6 @@ import { usePostSmartVehiclesMutation } from "@/slices/smartVehicleSlice";
 import React, { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 
-// type Vehicle = {
-//   ip: string;
-//   vehicleNo: string;
-//   imeiNo: number;
-//   companyName: string;
-//   status: string;
-//   type: string;
-//   branchName: string;
-//   projectName: string;
-//   createdDate: string;
-// };
-
 type Vehicle = {
   vehicleName: string;
   resellerName: string;
@@ -246,37 +234,55 @@ const VehicleTrackingDashboard = () => {
       <div className="flex-1 overflow-hidden flex flex-col bg-white text-black rounded-lg shadow">
         <div className="overflow-x-auto flex-1 overflow-y-auto">
           <table className="min-w-full text-sm">
-            <thead className="sticky top-0 bg-gray-100">
+            <thead className="sticky top-0 bg-gray-100 text-nowrap">
               <tr className="text-left">
-                <th className="p-2">
+                <th className="p-2 min-w-[50px]">
                   <input
                     type="checkbox"
                     checked={areAllSelected}
                     onChange={handleSelectAllOnPage}
                   />
                 </th>
-                <th className="p-2">Vehicle Name</th>
-                <th className="p-2">Reseller</th>
-                <th className="p-2">IP</th>
-                <th className="p-2">Company</th>
-                <th className="p-2">Branch</th>
-                <th className="p-2">Inactive Days</th>
-                <th className="p-2">Admin</th>
-                <th className="p-2">Vehicle No</th>
-                <th className="p-2">Created Date</th>
-                <th className="p-2">IMEI</th>
-                <th className="p-2">Project</th>
-                <th className="p-2">Region</th>
-                <th className="p-2">Project ID</th>
-                <th className="p-2">SIM No</th>
-                <th className="p-2">Username</th>
+                <th className="p-2 min-w-[130px] whitespace-nowrap">SERVER</th>
+                <th className="p-2 min-w-[170px] whitespace-nowrap">
+                  VEHICLE NO
+                </th>
+                <th className="p-2 pl-8 min-w-[150px] whitespace-nowrap">
+                  VEHICLE NAME
+                </th>
+                <th className="p-2 min-w-[130px] whitespace-nowrap">IMEI</th>
+                <th className="p-2 pl-8 min-w-[130px] whitespace-nowrap">
+                  SIM NO
+                </th>
+                <th className="p-2 pl-8 min-w-[130px] whitespace-nowrap">
+                  COMPANY
+                </th>
+                <th className="p-2 min-w-[130px] whitespace-nowrap">BRANCH</th>
+                <th className="p-2 min-w-[130px] whitespace-nowrap">PROJECT</th>
+                <th className="p-2 pl-8 min-w-[160px] whitespace-nowrap">
+                  INSTALLATION DATE
+                </th>
+                <th className="p-2 min-w-[130px] whitespace-nowrap">
+                  RESELLER
+                </th>
+                <th className="p-2 min-w-[130px] whitespace-nowrap">
+                  INACTIVE DAYS
+                </th>
+                <th className="p-2 min-w-[100px] whitespace-nowrap">ADMIN</th>
+                <th className="p-2 min-w-[100px] whitespace-nowrap">REGION</th>
+                <th className="p-2 min-w-[100px] whitespace-nowrap">
+                  PROJECT ID
+                </th>
+                <th className="p-2 min-w-[130px] whitespace-nowrap">
+                  USERNAME
+                </th>
               </tr>
             </thead>
 
             <tbody>
               {paginatedVehicles.length > 0 ? (
                 paginatedVehicles.map((v) => (
-                  <tr key={v.imeiNo} className="border-t">
+                  <tr key={v.imeiNo} className="border-t whitespace-nowrap">
                     <td className="p-2">
                       <input
                         type="checkbox"
@@ -284,20 +290,20 @@ const VehicleTrackingDashboard = () => {
                         onChange={() => handleCheckboxChange(v.imeiNo)}
                       />
                     </td>
-                    <td className="p-2">{v.vehicleName}</td>
-                    <td className="p-2">{v.resellerName}</td>
                     <td className="p-2">{v.ip}</td>
-                    <td className="p-2">{v.companyName}</td>
+                    <td className="p-2">{v.vehicleNo}</td>
+                    <td className="p-2 pl-8">{v.vehicleName}</td>
+                    <td className="p-2 ">{v.imeiNo}</td>
+                    <td className="p-2 pl-8">{v.simNo}</td>
+                    <td className="p-2 pl-8">{v.companyName}</td>
                     <td className="p-2">{v.branchName}</td>
+                    <td className="p-2">{v.projectName}</td>
+                    <td className="p-2 pl-8">{v.createdDate}</td>
+                    <td className="p-2">{v.resellerName}</td>
                     <td className="p-2">{v.InActiveDays}</td>
                     <td className="p-2">{v.adminName}</td>
-                    <td className="p-2">{v.vehicleNo}</td>
-                    <td className="p-2">{v.createdDate}</td>
-                    <td className="p-2">{v.imeiNo}</td>
-                    <td className="p-2">{v.projectName}</td>
                     <td className="p-2">{v.region}</td>
                     <td className="p-2">{v.projectId}</td>
-                    <td className="p-2">{v.simNo}</td>
                     <td className="p-2">{v.username}</td>
                   </tr>
                 ))
