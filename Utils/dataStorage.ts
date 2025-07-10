@@ -1,79 +1,101 @@
-import fs from 'fs';
-import path from 'path';
+import { 
+  getCachedVehicles, 
+  setCachedVehicles, 
+  getCachedMetadata, 
+  setCachedMetadata,
+  hasCachedData 
+} from './cache';
 
-// In-memory storage for Vercel serverless functions
+// In-memory storage as fallback
 let inMemoryData: any = null;
 
-// Check if we're in a serverless environment (Vercel)
-const isServerless = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
-
-// Get the data directory path
-const getDataDir = () => {
-  if (isServerless) {
-    // In serverless, we can't write to filesystem, so use in-memory
-    return null;
-  }
-  
-  // In development, use local filesystem
-  const dataDir = path.join(process.cwd(), 'data');
-  
-  // Create data directory if it doesn't exist
-  if (!fs.existsSync(dataDir)) {
-    try {
-      fs.mkdirSync(dataDir, { recursive: true });
-    } catch (error) {
-      console.error('Error creating data directory:', error);
-      return null;
-    }
-  }
-  
-  return dataDir;
-};
-
-// Get the data file path
-const getDataFilePath = () => {
-  const dataDir = getDataDir();
-  if (!dataDir) return null;
-  return path.join(dataDir, 'vehicles.json');
-};
-
-// Read vehicle data
+// Read vehicle data - cache first, database fallback
 export const readVehicleData = (): any => {
   try {
-    if (isServerless) {
-      // In serverless environment, return in-memory data
+    console.log('🔍 readVehicleData: starting...');
+    
+    // Try cache first
+    const cachedVehicles = getCachedVehicles();
+    const cachedMetadata = getCachedMetadata();
+    
+    console.log(`🔍 readVehicleData: cachedVehicles=${cachedVehicles.length}, cachedMetadata=${!!cachedMetadata}`);
+    
+    if (cachedVehicles.length > 0 && cachedMetadata) {
+      console.log(`📋 Using cached data: ${cachedVehicles.length} vehicles`);
+      return {
+        vehicles: cachedVehicles,
+        lastUpdated: cachedMetadata.lastUpdated,
+        totalRecords: cachedVehicles.length,
+        metadata: cachedMetadata.metadata
+      };
+    }
+    
+    // Cache is empty - fallback to in-memory data
+    if (inMemoryData) {
+      console.log(`💾 Using in-memory data: ${inMemoryData.vehicles?.length || 0} vehicles`);
       return inMemoryData;
     }
     
-    const filePath = getDataFilePath();
-    if (!filePath || !fs.existsSync(filePath)) {
-      return null;
-    }
-    
-    const data = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(data);
+    console.log('❌ No data available in cache or memory');
+    return null;
   } catch (error) {
     console.error('Error reading vehicle data:', error);
     return null;
   }
 };
 
-// Write vehicle data
+// Check if we need to fetch data (cache is empty)
+export const needsDataFetch = (): boolean => {
+  const cachedVehicles = getCachedVehicles();
+  const cachedMetadata = getCachedMetadata();
+  
+  const hasCachedData = cachedVehicles.length > 0 && cachedMetadata;
+  const hasMemoryData = !!inMemoryData;
+  
+  const needsFetch = !hasCachedData && !hasMemoryData;
+  
+  console.log(`🔍 Data fetch check:`, {
+    hasCachedData,
+    hasMemoryData,
+    needsFetch,
+    cachedVehicleCount: cachedVehicles.length
+  });
+  
+  return needsFetch;
+};
+
+// Get data age in hours
+export const getDataAge = (): number | null => {
+  try {
+    const cachedMetadata = getCachedMetadata();
+    if (!cachedMetadata?.lastUpdated) return null;
+    
+    const lastUpdated = new Date(cachedMetadata.lastUpdated);
+    const now = new Date();
+    const ageInHours = (now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60);
+    
+    return ageInHours;
+  } catch (error) {
+    console.error('Error calculating data age:', error);
+    return null;
+  }
+};
+
+// Write vehicle data - always use cache
 export const writeVehicleData = (data: any): boolean => {
   try {
-    if (isServerless) {
-      // In serverless environment, store in memory
-      inMemoryData = data;
-      return true;
-    }
+    console.log(`💾 writeVehicleData: storing ${data.vehicles?.length || 0} vehicles`);
     
-    const filePath = getDataFilePath();
-    if (!filePath) {
-      console.error('Cannot write data: file path is null');
-      return false;
-    }
+    // Store in cache and memory
+    const cacheResult = setCachedVehicles(data.vehicles);
+    const metadataResult = setCachedMetadata({
+      lastUpdated: data.lastUpdated,
+      metadata: data.metadata
+    });
+    inMemoryData = data;
     
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    console.log(`💾 writeVehicleData: cacheResult=${cacheResult}, metadataResult=${metadataResult}`);
+    
     return true;
   } catch (error) {
     console.error('Error writing vehicle data:', error);
@@ -81,7 +103,7 @@ export const writeVehicleData = (data: any): boolean => {
   }
 };
 
-// Append vehicle data
+// Append vehicle data - replace data for same date range to prevent duplication
 export const appendVehicleData = (newVehicles: any[], metadata: any): boolean => {
   try {
     const existingData = readVehicleData();
@@ -95,10 +117,29 @@ export const appendVehicleData = (newVehicles: any[], metadata: any): boolean =>
       endDate: metadata.endDate
     }));
     
+    // Check if we already have data for the same date range
+    const existingVehiclesForDateRange = currentVehicles.filter((vehicle: any) => 
+      vehicle.startDate === metadata.startDate && vehicle.endDate === metadata.endDate
+    );
+    
+    let updatedVehicles;
+    if (existingVehiclesForDateRange.length > 0) {
+      // Replace data for the same date range
+      const otherVehicles = currentVehicles.filter((vehicle: any) => 
+        !(vehicle.startDate === metadata.startDate && vehicle.endDate === metadata.endDate)
+      );
+      updatedVehicles = [...otherVehicles, ...vehiclesWithMetadata];
+      console.log(`🔄 Replaced ${existingVehiclesForDateRange.length} existing vehicles for date range ${metadata.startDate} to ${metadata.endDate} with ${vehiclesWithMetadata.length} new vehicles`);
+    } else {
+      // Append new data for a different date range
+      updatedVehicles = [...currentVehicles, ...vehiclesWithMetadata];
+      console.log(`➕ Appended ${vehiclesWithMetadata.length} new vehicles for date range ${metadata.startDate} to ${metadata.endDate}`);
+    }
+    
     const updatedData = {
-      vehicles: [...currentVehicles, ...vehiclesWithMetadata],
+      vehicles: updatedVehicles,
       lastUpdated: new Date().toISOString(),
-      totalRecords: currentVehicles.length + newVehicles.length,
+      totalRecords: updatedVehicles.length,
       metadata
     };
     
@@ -134,6 +175,55 @@ export const cleanOldData = (daysToKeep: number = 30): boolean => {
   } catch (error) {
     console.error('Error cleaning old data:', error);
     return false;
+  }
+};
+
+// Clear all vehicle data
+export const clearAllVehicleData = (): boolean => {
+  try {
+    setCachedVehicles([]);
+    setCachedMetadata(null);
+    inMemoryData = null;
+    console.log('🗑️ All vehicle data cleared successfully');
+    return true;
+  } catch (error) {
+    console.error('Error clearing vehicle data:', error);
+    return false;
+  }
+};
+
+// Get data statistics
+export const getDataStats = () => {
+  try {
+    const data = readVehicleData();
+    if (!data || !data.vehicles) {
+      return {
+        totalVehicles: 0,
+        lastUpdated: null,
+        dateRanges: [],
+        uniqueDates: 0
+      };
+    }
+    
+    // Get unique date ranges
+    const dateRanges = Array.from(new Set(
+      data.vehicles.map((v: any) => `${v.startDate} to ${v.endDate}`)
+    ));
+    
+    return {
+      totalVehicles: data.vehicles.length,
+      lastUpdated: data.lastUpdated,
+      dateRanges,
+      uniqueDates: dateRanges.length
+    };
+  } catch (error) {
+    console.error('Error getting data stats:', error);
+    return {
+      totalVehicles: 0,
+      lastUpdated: null,
+      dateRanges: [],
+      uniqueDates: 0
+    };
   }
 };
 

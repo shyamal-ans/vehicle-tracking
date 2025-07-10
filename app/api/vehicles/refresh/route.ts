@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { appendVehicleData, cleanOldData, readVehicleData, needsDataFetch, getDataAge } from '@/Utils/dataStorage';
+import { appendVehicleData, cleanOldData, readVehicleData, clearAllVehicleData } from '@/Utils/dataStorage';
 
 const credentials = {
   username: 'shyamal@ansgujarat.in',
@@ -94,14 +94,13 @@ async function fetchAllVehicles() {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔄 Cron job triggered - fetching fresh vehicle data...');
+    console.log('🔄 Manual refresh requested - clearing cache and fetching fresh data...');
     
-    // Get current data age for logging
-    const dataAge = getDataAge();
-    console.log(`📊 Current data age: ${dataAge?.toFixed(1)} hours`);
-    
-    // Always fetch fresh data when cron runs
-    console.log('🚀 Fetching fresh data from API...');
+    // Clear existing data first
+    const cleared = clearAllVehicleData();
+    if (cleared) {
+      console.log('🗑️ Existing data cleared');
+    }
 
     // Fetch all vehicles from the API
     const vehicles = await fetchAllVehicles();
@@ -135,7 +134,7 @@ export async function POST(request: NextRequest) {
       endDate
     };
 
-    // Store new data (will replace if same date range)
+    // Store new data
     const success = appendVehicleData(vehicles, metadata);
     
     if (!success) {
@@ -151,27 +150,25 @@ export async function POST(request: NextRequest) {
     // Get updated data for response
     const updatedData = readVehicleData();
     
-    console.log(`✅ Cron job completed successfully`);
+    console.log(`✅ Manual refresh completed successfully`);
     console.log(`📁 Total vehicles stored: ${updatedData?.totalRecords || 0}`);
 
     return NextResponse.json({
       success: true,
-      message: 'Cron job completed successfully',
-      type: 'cron_refresh',
+      message: 'Manual refresh completed successfully',
+      type: 'manual_refresh',
       newVehicles: vehicles.length,
       totalVehicles: updatedData?.totalRecords || 0,
       lastUpdated: updatedData?.lastUpdated || new Date().toISOString(),
-      dataAge: dataAge,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('❌ Error in cron job:', error);
+    console.error('❌ Error in manual refresh:', error);
     
-    // Return a more graceful error response
     return NextResponse.json({
       success: false,
-      error: 'Failed to fetch vehicle data',
+      error: 'Failed to refresh vehicle data',
       message: error instanceof Error ? error.message : 'Unknown error',
       newVehicles: 0,
       totalVehicles: 0,
