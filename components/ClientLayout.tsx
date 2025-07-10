@@ -42,7 +42,7 @@ export default function ClientLayout({
             {/* <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} /> */}
 
             {/* Content */}
-            <main style={{ width: sidebarOpen ? "calc(100vw - 295px)" : "calc(100vw - 64px)" }} className={`p-6 h-screen`}>
+            <main style={{ width: sidebarOpen ? "calc(100vw - 295px)" : "calc(100vw - 64px)" }} className={`p-6 min-h-screen overflow-y-auto`}>
               {children}
 
               {/* More content could go here */}
