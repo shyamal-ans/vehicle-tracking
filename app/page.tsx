@@ -82,12 +82,13 @@ const VehicleTrackingDashboard = () => {
       console.log('📁 No vehicle data found. Auto-fetching...');
       setHasAutoFetched(true);
       triggerFetch().unwrap()
-        .then(() => {
-          console.log('✅ Auto-fetch completed successfully');
+        .then((result) => {
+          console.log('✅ Auto-fetch completed successfully:', result);
           refetchStored();
         })
         .catch((error) => {
           console.error('❌ Auto-fetch failed:', error);
+          // Don't show error to user, just log it
         });
     }
   }, [storedData, isLoadingStored, hasAutoFetched, triggerFetch, refetchStored]);

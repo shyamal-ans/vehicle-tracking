@@ -59,12 +59,19 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching stored vehicles:', error);
     
+    // Return empty data instead of error for better UX
     return NextResponse.json({
-      success: false,
-      error: 'Failed to fetch stored vehicle data',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      success: true,
+      data: [],
+      pagination: {
+        page: 1,
+        pageSize: 100,
+        total: 0,
+        totalPages: 1
+      },
+      metadata: null,
       timestamp: new Date().toISOString()
-    }, { status: 500 });
+    });
   }
 }
 
@@ -126,11 +133,18 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching stored vehicles:', error);
     
+    // Return empty data instead of error for better UX
     return NextResponse.json({
-      success: false,
-      error: 'Failed to fetch stored vehicle data',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      success: true,
+      data: [],
+      pagination: {
+        page: 1,
+        pageSize: 100,
+        total: 0,
+        totalPages: 1
+      },
+      metadata: null,
       timestamp: new Date().toISOString()
-    }, { status: 500 });
+    });
   }
 } 
