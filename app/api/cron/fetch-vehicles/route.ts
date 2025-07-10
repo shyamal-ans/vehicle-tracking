@@ -92,30 +92,28 @@ async function fetchAllVehicles() {
   }
 }
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    // Check for cron job secret (optional security)
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
+    console.log('🔄 Starting vehicle data fetch...');
     
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     // Check if this is initial fetch or append
     const existingData = readVehicleData();
     const isInitialFetch = !existingData;
 
     console.log(`🚀 Starting vehicle data fetch (${isInitialFetch ? 'INITIAL' : 'APPEND'})...`);
-    
+
     // Fetch all vehicles from the API
     const vehicles = await fetchAllVehicles();
     
     if (vehicles.length === 0) {
       console.log('⚠️ No vehicles found in API response');
       return NextResponse.json({ 
+        success: true,
         message: 'No vehicles found',
         type: isInitialFetch ? 'initial' : 'append',
+        newVehicles: 0,
+        totalVehicles: 0,
+        lastUpdated: new Date().toISOString(),
         timestamp: new Date().toISOString()
       });
     }
@@ -128,41 +126,53 @@ export async function GET(request: NextRequest) {
     const startDate = `${yyyy}-${mm}-${dd} 00:00:00`;
     const endDate = `${yyyy}-${mm}-${dd} 23:59:59`;
 
-    // Append new vehicles to existing data
-    const updatedData = appendVehicleData(vehicles, {
+    // Prepare metadata
+    const metadata = {
       adminCode: "CUS-UT002",
       projectId: "16,17,21,22,34,37,40,41,46,48,49,52,53,58,59,72,77",
       startDate,
-      endDate,
-    });
+      endDate
+    };
+
+    // Append new data to existing data
+    const success = appendVehicleData(vehicles, metadata);
+    
+    if (!success) {
+      throw new Error('Failed to store vehicle data');
+    }
 
     // Clean old data (keep last 30 days)
     cleanOldData(30);
 
+    // Get updated data for response
+    const updatedData = readVehicleData();
+    
     const actionType = isInitialFetch ? 'created' : 'updated';
     console.log(`✅ Vehicle data ${actionType} successfully`);
+    console.log(`📁 Total vehicles stored: ${updatedData?.totalRecords || 0}`);
 
     return NextResponse.json({
+      success: true,
       message: `Vehicle data ${actionType} successfully`,
       type: isInitialFetch ? 'initial' : 'append',
       newVehicles: vehicles.length,
-      totalVehicles: updatedData.totalRecords,
-      lastUpdated: updatedData.lastUpdated,
+      totalVehicles: updatedData?.totalRecords || 0,
+      lastUpdated: updatedData?.lastUpdated || new Date().toISOString(),
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
     console.error('❌ Error in vehicle data fetch:', error);
     
+    // Return a more graceful error response
     return NextResponse.json({
+      success: false,
       error: 'Failed to fetch vehicle data',
       message: error instanceof Error ? error.message : 'Unknown error',
+      newVehicles: 0,
+      totalVehicles: 0,
+      lastUpdated: new Date().toISOString(),
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }
-}
-
-// Also support POST for manual triggers
-export async function POST(request: NextRequest) {
-  return GET(request);
 } 
