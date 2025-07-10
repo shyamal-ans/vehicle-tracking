@@ -1,140 +1,139 @@
 import fs from 'fs';
 import path from 'path';
 
-// Types for our data structure
-export interface VehicleData {
-  vehicleName: string;
-  resellerName: string;
-  ip: string;
-  companyName: string;
-  branchName: string;
-  InActiveDays: number;
-  adminName: string;
-  vehicleNo: string;
-  createdDate: string;
-  imeiNo: number;
-  projectName: string;
-  region: string;
-  projectId: string;
-  simNo: string;
-  username: string;
-  status?: string;
-  type?: string;
-  fetchedAt: string; // When this data was fetched
-  startDate: string; // Date range start for this fetch
-  endDate: string; // Date range end for this fetch
-}
+// In-memory storage for Vercel serverless functions
+let inMemoryData: any = null;
 
-export interface StoredVehicleData {
-  lastUpdated: string;
-  totalRecords: number;
-  vehicles: VehicleData[];
-  metadata: {
-    adminCode: string;
-    projectId: string;
-    startDate: string;
-    endDate: string;
-  };
-}
+// Check if we're in a serverless environment (Vercel)
+const isServerless = process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const VEHICLE_DATA_FILE = path.join(DATA_DIR, 'vehicle-data.json');
-
-// Ensure data directory exists
-const ensureDataDirectory = () => {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+// Get the data directory path
+const getDataDir = () => {
+  if (isServerless) {
+    // In serverless, we can't write to filesystem, so use in-memory
+    return null;
   }
+  
+  // In development, use local filesystem
+  const dataDir = path.join(process.cwd(), 'data');
+  
+  // Create data directory if it doesn't exist
+  if (!fs.existsSync(dataDir)) {
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+    } catch (error) {
+      console.error('Error creating data directory:', error);
+      return null;
+    }
+  }
+  
+  return dataDir;
 };
 
-// Read existing vehicle data
-export const readVehicleData = (): StoredVehicleData | null => {
+// Get the data file path
+const getDataFilePath = () => {
+  const dataDir = getDataDir();
+  if (!dataDir) return null;
+  return path.join(dataDir, 'vehicles.json');
+};
+
+// Read vehicle data
+export const readVehicleData = (): any => {
   try {
-    ensureDataDirectory();
+    if (isServerless) {
+      // In serverless environment, return in-memory data
+      return inMemoryData;
+    }
     
-    if (!fs.existsSync(VEHICLE_DATA_FILE)) {
+    const filePath = getDataFilePath();
+    if (!filePath || !fs.existsSync(filePath)) {
       return null;
     }
     
-    const data = fs.readFileSync(VEHICLE_DATA_FILE, 'utf-8');
-    return JSON.parse(data) as StoredVehicleData;
+    const data = fs.readFileSync(filePath, 'utf8');
+    return JSON.parse(data);
   } catch (error) {
     console.error('Error reading vehicle data:', error);
     return null;
   }
 };
 
-// Write vehicle data (overwrites existing)
-export const writeVehicleData = (data: StoredVehicleData): void => {
+// Write vehicle data
+export const writeVehicleData = (data: any): boolean => {
   try {
-    ensureDataDirectory();
-    fs.writeFileSync(VEHICLE_DATA_FILE, JSON.stringify(data, null, 2));
-    console.log(`Vehicle data written successfully. Total records: ${data.vehicles.length}`);
+    if (isServerless) {
+      // In serverless environment, store in memory
+      inMemoryData = data;
+      return true;
+    }
+    
+    const filePath = getDataFilePath();
+    if (!filePath) {
+      console.error('Cannot write data: file path is null');
+      return false;
+    }
+    
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    return true;
   } catch (error) {
     console.error('Error writing vehicle data:', error);
-    throw error;
+    return false;
   }
 };
 
-// Append new vehicle data to existing data
-export const appendVehicleData = (
-  newVehicles: VehicleData[],
-  metadata: {
-    adminCode: string;
-    projectId: string;
-    startDate: string;
-    endDate: string;
-  }
-): StoredVehicleData => {
+// Append vehicle data
+export const appendVehicleData = (newVehicles: any[], metadata: any): boolean => {
   try {
-    ensureDataDirectory();
-    
-    // Read existing data
     const existingData = readVehicleData();
-    const isInitialFetch = !existingData;
+    const currentVehicles = existingData?.vehicles || [];
     
-    // Create new data structure
-    const now = new Date().toISOString();
-    const updatedVehicles = existingData?.vehicles || [];
-    
-    // Add fetchedAt timestamp and date range to new vehicles
+    // Add metadata to each vehicle
     const vehiclesWithMetadata = newVehicles.map(vehicle => ({
       ...vehicle,
-      fetchedAt: now,
+      fetchedAt: new Date().toISOString(),
       startDate: metadata.startDate,
       endDate: metadata.endDate
     }));
     
-    // Append new vehicles (avoid duplicates by IMEI)
-    const existingImeis = new Set(updatedVehicles.map(v => v.imeiNo));
-    const uniqueNewVehicles = vehiclesWithMetadata.filter(v => !existingImeis.has(v.imeiNo));
-    
-    const finalVehicles = [...updatedVehicles, ...uniqueNewVehicles];
-    
-    const newData: StoredVehicleData = {
-      lastUpdated: now,
-      totalRecords: finalVehicles.length,
-      vehicles: finalVehicles,
-      metadata: {
-        ...metadata,
-        startDate: existingData?.metadata.startDate || metadata.startDate,
-        endDate: metadata.endDate // Always update to latest end date
-      }
+    const updatedData = {
+      vehicles: [...currentVehicles, ...vehiclesWithMetadata],
+      lastUpdated: new Date().toISOString(),
+      totalRecords: currentVehicles.length + newVehicles.length,
+      metadata
     };
     
-    // Write the updated data
-    writeVehicleData(newData);
-    
-    if (isInitialFetch) {
-      console.log(`📁 Initial data fetch: Created ${finalVehicles.length} vehicle records`);
-    } else {
-      console.log(`📁 Data append: Added ${uniqueNewVehicles.length} new vehicles. Total: ${finalVehicles.length}`);
-    }
-    
-    return newData;
+    return writeVehicleData(updatedData);
   } catch (error) {
     console.error('Error appending vehicle data:', error);
-    throw error;
+    return false;
+  }
+};
+
+// Clean old data (keep last 30 days)
+export const cleanOldData = (daysToKeep: number = 30): boolean => {
+  try {
+    const data = readVehicleData();
+    if (!data || !data.vehicles) return true;
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+    
+    const filteredVehicles = data.vehicles.filter((vehicle: any) => {
+      const fetchedDate = new Date(vehicle.fetchedAt);
+      return fetchedDate >= cutoffDate;
+    });
+    
+    const updatedData = {
+      ...data,
+      vehicles: filteredVehicles,
+      totalRecords: filteredVehicles.length,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    return writeVehicleData(updatedData);
+  } catch (error) {
+    console.error('Error cleaning old data:', error);
+    return false;
   }
 };
 
@@ -248,32 +247,24 @@ export const getVehicles = (
   }
 };
 
-// Clean old data (keep only last N days)
-export const cleanOldData = (daysToKeep: number = 30): void => {
-  try {
-    const data = readVehicleData();
-    if (!data) return;
-    
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-    
-    const filteredVehicles = data.vehicles.filter(vehicle => {
-      const fetchedDate = new Date(vehicle.fetchedAt);
-      return fetchedDate >= cutoffDate;
-    });
-    
-    if (filteredVehicles.length !== data.vehicles.length) {
-      const cleanedData: StoredVehicleData = {
-        ...data,
-        vehicles: filteredVehicles,
-        totalRecords: filteredVehicles.length,
-        lastUpdated: new Date().toISOString()
-      };
-      
-      writeVehicleData(cleanedData);
-      console.log(`🧹 Cleaned old data. Removed ${data.vehicles.length - filteredVehicles.length} old records.`);
-    }
-  } catch (error) {
-    console.error('Error cleaning old data:', error);
-  }
+// Type definitions
+export type VehicleData = {
+  vehicleName: string;
+  resellerName: string;
+  ip: string;
+  companyName: string;
+  branchName: string;
+  InActiveDays: number;
+  adminName: string;
+  vehicleNo: string;
+  createdDate: string;
+  imeiNo: number;
+  projectName: string;
+  region: string;
+  projectId: string;
+  simNo: string;
+  username: string;
+  fetchedAt?: string;
+  startDate?: string;
+  endDate?: string;
 }; 
