@@ -9,7 +9,7 @@ export const apiSlice = createApi({
       return headers;
     },
   }),
-  tagTypes: ["vehicle_details"],
+  tagTypes: ["vehicle_details", "stored_vehicle_details"],
   endpoints: () => ({}),
 });
 
