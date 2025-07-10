@@ -147,6 +147,18 @@ export async function POST(request: NextRequest) {
       console.log('🧹 Old data cleaned successfully');
     }
 
+    // Refresh filter options after data update
+    try {
+      const filterOptionsResponse = await fetch(`${request.nextUrl.origin}/api/vehicles/filter-options`, {
+        method: 'POST'
+      });
+      if (filterOptionsResponse.ok) {
+        console.log('🔄 Filter options refreshed successfully');
+      }
+    } catch (error) {
+      console.log('⚠️ Failed to refresh filter options:', error);
+    }
+
     // Get updated data for response
     const updatedData = readVehicleData();
     
