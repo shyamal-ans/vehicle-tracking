@@ -82,6 +82,12 @@ export const SmartVehicles = apiSlice.injectEndpoints({
       pageSize?: number;
       startDate?: string;
       endDate?: string;
+      server?: string;
+      status?: string;
+      platform?: string;
+      company?: string;
+      region?: string;
+      project?: string;
     }>({
       query(params) {
         const searchParams = new URLSearchParams();
@@ -90,6 +96,12 @@ export const SmartVehicles = apiSlice.injectEndpoints({
         if (params.pageSize) searchParams.append('pageSize', params.pageSize.toString());
         if (params.startDate) searchParams.append('startDate', params.startDate);
         if (params.endDate) searchParams.append('endDate', params.endDate);
+        if (params.server) searchParams.append('server', params.server);
+        if (params.status) searchParams.append('status', params.status);
+        if (params.platform) searchParams.append('platform', params.platform);
+        if (params.company) searchParams.append('company', params.company);
+        if (params.region) searchParams.append('region', params.region);
+        if (params.project) searchParams.append('project', params.project);
         
         return {
           url: `/api/vehicles/stored?${searchParams.toString()}`,
@@ -97,6 +109,27 @@ export const SmartVehicles = apiSlice.injectEndpoints({
         };
       },
       providesTags: ["stored_vehicle_details"],
+    }),
+
+    // New endpoint for filter options
+    GetFilterOptions: builder.query<{
+      success: boolean;
+      data: {
+        servers: string[];
+        companies: string[];
+        platforms: string[];
+        regions: string[];
+        projects: string[];
+      };
+      timestamp: string;
+    }, void>({
+      query() {
+        return {
+          url: "/api/vehicles/filter-options",
+          method: "GET",
+        };
+      },
+      providesTags: ["filter_options"],
     }),
     
     // Manual trigger for cron job
@@ -121,5 +154,6 @@ export const SmartVehicles = apiSlice.injectEndpoints({
 export const { 
   usePostSmartVehiclesMutation,
   useGetStoredVehiclesQuery,
+  useGetFilterOptionsQuery,
   useTriggerVehicleFetchMutation
 } = SmartVehicles;

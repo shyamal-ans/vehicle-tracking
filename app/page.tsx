@@ -1,6 +1,6 @@
 "use client";
 
-import { useGetStoredVehiclesQuery, useTriggerVehicleFetchMutation } from "@/slices/smartVehicleSlice";
+import { useGetStoredVehiclesQuery, useGetFilterOptionsQuery, useTriggerVehicleFetchMutation } from "@/slices/smartVehicleSlice";
 import React, { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { formatDateTime } from "@/Utils/Utils";
@@ -48,10 +48,11 @@ const VehicleTrackingDashboard = () => {
     status: "",
     platform: "",
     company: "",
-    region: ""
+    region: "",
+    project: ""
   });
 
-  // Query for stored vehicle data with pagination
+  // Query for stored vehicle data with pagination and filters
   const { 
     data: storedData, 
     isLoading: isLoadingStored, 
@@ -61,7 +62,16 @@ const VehicleTrackingDashboard = () => {
     search: searchQuery,
     page: currentPage,
     pageSize,
+    server: filters.server,
+    status: filters.status,
+    platform: filters.platform,
+    company: filters.company,
+    region: filters.region,
+    project: filters.project,
   });
+
+  // Query for filter options
+  const { data: filterOptions } = useGetFilterOptionsQuery();
 
   // Mutation to trigger manual data fetch
   const [triggerFetch, { isLoading: isFetching }] = useTriggerVehicleFetchMutation();
@@ -93,56 +103,10 @@ const VehicleTrackingDashboard = () => {
     }
   }, [storedData]);
 
-  // Reset to page 1 when search changes
+  // Reset to page 1 when search or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery]);
-
-  // Apply client-side filters to current page data
-  const filteredVehicles = vehicles.filter(vehicle => {
-    // Apply server filter (IP)
-    if (filters.server && !vehicle.ip.toLowerCase().includes(filters.server.toLowerCase())) {
-      return false;
-    }
-
-    // Apply status filter (InActiveDays)
-    if (filters.status) {
-      if (filters.status === "Active" && vehicle.InActiveDays !== 0) {
-        return false;
-      } else if (filters.status === "Inactive" && vehicle.InActiveDays === 0) {
-        return false;
-      }
-    }
-
-    // Apply platform filter (projectName)
-    if (filters.platform && !vehicle.projectName.toLowerCase().includes(filters.platform.toLowerCase())) {
-      return false;
-    }
-
-    // Apply company filter
-    if (filters.company && !vehicle.companyName.toLowerCase().includes(filters.company.toLowerCase())) {
-      return false;
-    }
-
-    // Apply region filter
-    if (filters.region && !vehicle.region.toLowerCase().includes(filters.region.toLowerCase())) {
-      return false;
-    }
-
-    return true;
-  });
-
-  // Get unique values for filter options (this would need to be fetched separately or cached)
-  const getUniqueValues = (field: keyof Vehicle) => {
-    const values = new Set<string>();
-    vehicles.forEach(vehicle => {
-      const value = vehicle[field];
-      if (value && typeof value === 'string') {
-        values.add(value);
-      }
-    });
-    return Array.from(values).sort();
-  };
+  }, [searchQuery, filters]);
 
   // Handle filter changes
   const handleFilterChange = (filterName: string, value: string) => {
@@ -166,10 +130,16 @@ const VehicleTrackingDashboard = () => {
   };
 
   // Select/deselect all vehicles on current page
-  const currentImeiNos = filteredVehicles.map((v) => v.imeiNo);
+  const currentImeiNos = vehicles.map((v) => v.imeiNo);
   const areAllSelected = currentImeiNos.every((imei) =>
     selectedVehicles.has(imei)
   );
+  
+  // Check if all vehicles across all data are selected (when no filters applied)
+  const areAllDataSelected = Object.values(filters).every(filter => !filter) && 
+    !searchQuery && 
+    selectedVehicles.size === totalVehicles && 
+    totalVehicles > 0;
 
   const handleSelectAllOnPage = () => {
     setSelectedVehicles((prev) => {
@@ -183,37 +153,101 @@ const VehicleTrackingDashboard = () => {
     });
   };
 
+  // Select all vehicles across all pages (when no filters applied)
+  const handleSelectAllData = async () => {
+    if (Object.values(filters).every(filter => !filter) && !searchQuery) {
+      // If no filters applied, select all vehicles in the dataset
+      try {
+        // Fetch all vehicle IMEIs to select them all
+        const response = await fetch('/api/vehicles/stored?pageSize=999999&page=1');
+        const data = await response.json();
+        
+        if (data.success) {
+          const allImeiNos = data.data.map((v: Vehicle) => v.imeiNo);
+          setSelectedVehicles(new Set(allImeiNos));
+        }
+      } catch (error) {
+        console.error('Error selecting all vehicles:', error);
+      }
+    } else {
+      // If filters applied, select only filtered vehicles on current page
+      handleSelectAllOnPage();
+    }
+  };
+
   // Export selected vehicles to Excel
-  const exportSelectedVehicles = () => {
-    const selected = vehicles
-      .filter((v) => selectedVehicles.has(v.imeiNo))
-      .map((v) => ({
-        "Vehicle Name": v.vehicleName,
-        Reseller: v.resellerName,
-        IP: v.ip,
-        Company: v.companyName,
-        Branch: v.branchName,
-        "Inactive Days": v.InActiveDays,
-        Admin: v.adminName,
-        "Vehicle No": v.vehicleNo,
-        "Created Date": v.createdDate,
-        IMEI: v.imeiNo,
-        Project: v.projectName,
-        Region: v.region,
-        "Project ID": v.projectId,
-        "SIM No": v.simNo,
-        Username: v.username,
-        "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
-        "Start Date": v.startDate || "-",
-        "End Date": v.endDate || "-",
-      }));
+  const exportSelectedVehicles = async () => {
+    if (selectedVehicles.size === 0) return;
 
-    if (selected.length === 0) return;
+    try {
+      // If no filters applied and all data is selected, we need to fetch all data
+      if (Object.values(filters).every(filter => !filter) && !searchQuery && selectedVehicles.size === totalVehicles) {
+        // Export all vehicles - fetch all data without pagination
+        const response = await fetch('/api/vehicles/stored?pageSize=999999&page=1');
+        const data = await response.json();
+        
+        if (data.success) {
+          const allVehicles = data.data;
+          const exportData = allVehicles.map((v: Vehicle) => ({
+            "Vehicle Name": v.vehicleName,
+            Reseller: v.resellerName,
+            IP: v.ip,
+            Company: v.companyName,
+            Branch: v.branchName,
+            "Inactive Days": v.InActiveDays,
+            Admin: v.adminName,
+            "Vehicle No": v.vehicleNo,
+            "Created Date": v.createdDate,
+            IMEI: v.imeiNo,
+            Project: v.projectName,
+            Region: v.region,
+            "Project ID": v.projectId,
+            "SIM No": v.simNo,
+            Username: v.username,
+            "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
+            "Start Date": v.startDate || "-",
+            "End Date": v.endDate || "-",
+          }));
 
-    const worksheet = XLSX.utils.json_to_sheet(selected);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
-    XLSX.writeFile(workbook, "selected_vehicles.xlsx");
+          const worksheet = XLSX.utils.json_to_sheet(exportData);
+          const workbook = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(workbook, worksheet, "All Vehicles");
+          XLSX.writeFile(workbook, "all_vehicles.xlsx");
+        }
+      } else {
+        // Export only selected vehicles from current filtered data
+        const selected = vehicles
+          .filter((v) => selectedVehicles.has(v.imeiNo))
+          .map((v) => ({
+            "Vehicle Name": v.vehicleName,
+            Reseller: v.resellerName,
+            IP: v.ip,
+            Company: v.companyName,
+            Branch: v.branchName,
+            "Inactive Days": v.InActiveDays,
+            Admin: v.adminName,
+            "Vehicle No": v.vehicleNo,
+            "Created Date": v.createdDate,
+            IMEI: v.imeiNo,
+            Project: v.projectName,
+            Region: v.region,
+            "Project ID": v.projectId,
+            "SIM No": v.simNo,
+            Username: v.username,
+            "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
+            "Start Date": v.startDate || "-",
+            "End Date": v.endDate || "-",
+          }));
+
+        const worksheet = XLSX.utils.json_to_sheet(selected);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
+        XLSX.writeFile(workbook, "selected_vehicles.xlsx");
+      }
+    } catch (error) {
+      console.error('Error exporting vehicles:', error);
+      alert('Error exporting vehicles. Please try again.');
+    }
   };
 
   // Reset search and filters
@@ -224,7 +258,8 @@ const VehicleTrackingDashboard = () => {
       status: "",
       platform: "",
       company: "",
-      region: ""
+      region: "",
+      project: ""
     });
     setShowFilters(false);
   };
@@ -232,15 +267,9 @@ const VehicleTrackingDashboard = () => {
   const isLoading = isLoadingStored || isFetching;
   const error = storedError;
 
-  // Get unique values for filter dropdowns
-  const uniqueServers = getUniqueValues('ip');
-  const uniqueCompanies = getUniqueValues('companyName');
-  const uniquePlatforms = getUniqueValues('projectName');
-  const uniqueRegions = getUniqueValues('region');
-
   // Calculate pagination info
   const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = startIndex + filteredVehicles.length;
+  const endIndex = startIndex + vehicles.length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
@@ -248,177 +277,65 @@ const VehicleTrackingDashboard = () => {
         {/* Header */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM21 17a2 2 0 11-4 0 2 2 0 014 0zM21 13V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6m18 0v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m18 0h-2M3 13h2m13-8V5a2 2 0 00-2-2H9a2 2 0 00-2 2v1" />
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Vehicle Tracking Dashboard</h1>
-                <p className="text-gray-600">Monitor and manage your vehicle fleet</p>
-              </div>
-            </div>
-            
-            {/* Status */}
-            <div className="flex items-center gap-4">
-              {storedData?.metadata && (
-                <div className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-lg">
-                  <span className="font-medium">Last updated:</span> {formatDateTime(storedData.metadata.lastUpdated)}
-                </div>
-              )}
-              
-              {isFetching && (
-                <div className="text-sm text-blue-600 bg-blue-50 px-3 py-2 rounded-lg flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  Fetching data...
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Search & Actions */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div className="relative flex-1 max-w-md">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <input
-                type="text"
-                placeholder="Search vehicles..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-              />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Vehicle Tracking Dashboard</h1>
+              <p className="text-gray-600">
+                {storedData?.metadata ? (
+                  <>
+                    Last updated: {formatDateTime(storedData.metadata.lastUpdated)} | 
+                    Total records: {storedData.metadata.totalRecords.toLocaleString()}
+                  </>
+                ) : (
+                  "No data available"
+                )}
+              </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={() => setShowFilters((prev) => !prev)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                  showFilters 
-                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                onClick={() => triggerFetch()}
+                disabled={isFetching}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z" />
-                </svg>
-                {showFilters ? "Hide Filters" : "Show Filters"}
+                {isFetching ? (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                )}
+                {isFetching ? "Fetching..." : "Fetch Latest Data"}
               </button>
-              
+
               <button
                 onClick={exportSelectedVehicles}
                 disabled={selectedVehicles.size === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                Export ({selectedVehicles.size})
+                {areAllDataSelected ? `Export All (${totalVehicles.toLocaleString()})` : `Export Selected (${selectedVehicles.size})`}
               </button>
-              
+
               <button
-                onClick={resetFilters}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z" />
                 </svg>
-                Reset
+                Filters
               </button>
             </div>
           </div>
         </div>
 
-        {/* Filters Section */}
-        {showFilters && (
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z" />
-              </svg>
-              Filters
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Server</label>
-                <select 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  value={filters.server}
-                  onChange={(e) => handleFilterChange('server', e.target.value)}
-                >
-                  <option value="">All Servers</option>
-                  {uniqueServers.map(server => (
-                    <option key={server} value={server}>{server}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                <select 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  value={filters.status}
-                  onChange={(e) => handleFilterChange('status', e.target.value)}
-                >
-                  <option value="">All Status</option>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Platform</label>
-                <select 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  value={filters.platform}
-                  onChange={(e) => handleFilterChange('platform', e.target.value)}
-                >
-                  <option value="">All Platforms</option>
-                  {uniquePlatforms.map(platform => (
-                    <option key={platform} value={platform}>{platform}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Company</label>
-                <select 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  value={filters.company}
-                  onChange={(e) => handleFilterChange('company', e.target.value)}
-                >
-                  <option value="">All Companies</option>
-                  {uniqueCompanies.map(company => (
-                    <option key={company} value={company}>{company}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Region</label>
-                <select 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  value={filters.region}
-                  onChange={(e) => handleFilterChange('region', e.target.value)}
-                >
-                  <option value="">All Regions</option>
-                  {uniqueRegions.map(region => (
-                    <option key={region} value={region}>{region}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Filter Summary */}
-        {(filters.server || filters.status || filters.platform || filters.company || filters.region) && (
+        {(filters.server || filters.status || filters.platform || filters.company || filters.region || filters.project) && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
             <div className="flex items-center gap-2 text-sm text-blue-800">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -430,10 +347,167 @@ const VehicleTrackingDashboard = () => {
               {filters.platform && <span className="bg-blue-200 px-2 py-1 rounded-md text-xs">Platform: {filters.platform}</span>}
               {filters.company && <span className="bg-blue-200 px-2 py-1 rounded-md text-xs">Company: {filters.company}</span>}
               {filters.region && <span className="bg-blue-200 px-2 py-1 rounded-md text-xs">Region: {filters.region}</span>}
-              <span className="text-blue-600 font-medium">({filteredVehicles.length} vehicles)</span>
+              {filters.project && <span className="bg-blue-200 px-2 py-1 rounded-md text-xs">Project: {filters.project}</span>}
+              <span className="text-blue-600 font-medium">({totalVehicles} vehicles)</span>
             </div>
           </div>
         )}
+
+        {/* Filters Sliding Panel */}
+        <div className={`fixed top-0 right-0 h-full w-80 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out z-50 ${showFilters ? 'translate-x-0' : 'translate-x-full'}`}>
+          <div className="h-full flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Filters</h3>
+              <button
+                onClick={() => setShowFilters(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Filters Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-6">
+                {/* Search */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Search
+                  </label>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search vehicles..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Server Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Server
+                  </label>
+                  <select
+                    value={filters.server}
+                    onChange={(e) => handleFilterChange("server", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">All Servers</option>
+                    {filterOptions?.data?.servers?.map(server => (
+                      <option key={server} value={server}>{server}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Status Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Status
+                  </label>
+                  <select
+                    value={filters.status}
+                    onChange={(e) => handleFilterChange("status", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">All Status</option>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+
+                {/* Platform Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Platform
+                  </label>
+                  <select
+                    value={filters.platform}
+                    onChange={(e) => handleFilterChange("platform", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">All Platforms</option>
+                    {filterOptions?.data?.platforms?.map(platform => (
+                      <option key={platform} value={platform}>{platform}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Company Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Company
+                  </label>
+                  <select
+                    value={filters.company}
+                    onChange={(e) => handleFilterChange("company", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">All Companies</option>
+                    {filterOptions?.data?.companies?.map(company => (
+                      <option key={company} value={company}>{company}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Region Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Region
+                  </label>
+                  <select
+                    value={filters.region}
+                    onChange={(e) => handleFilterChange("region", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">All Regions</option>
+                    {filterOptions?.data?.regions?.map(region => (
+                      <option key={region} value={region}>{region}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Project Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Project
+                  </label>
+                  <select
+                    value={filters.project}
+                    onChange={(e) => handleFilterChange("project", e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">All Projects</option>
+                    {filterOptions?.data?.projects?.map(project => (
+                      <option key={project} value={project}>{project}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-200">
+              <div className="flex gap-3">
+                <button
+                  onClick={resetFilters}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                >
+                  Reset
+                </button>
+                <button
+                  onClick={() => setShowFilters(false)}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Error Display */}
         {error && (
@@ -458,8 +532,8 @@ const VehicleTrackingDashboard = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <input
                       type="checkbox"
-                      checked={areAllSelected}
-                      onChange={handleSelectAllOnPage}
+                      checked={areAllDataSelected}
+                      onChange={handleSelectAllData}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                   </th>
@@ -496,8 +570,8 @@ const VehicleTrackingDashboard = () => {
                       </div>
                     </td>
                   </tr>
-                ) : filteredVehicles.length > 0 ? (
-                  filteredVehicles.map((v) => (
+                ) : vehicles.length > 0 ? (
+                  vehicles.map((v) => (
                     <tr key={v.imeiNo} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <input
@@ -563,11 +637,6 @@ const VehicleTrackingDashboard = () => {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="text-sm text-gray-700">
                 Showing {startIndex + 1}-{endIndex} of {totalVehicles} vehicles
-                {filteredVehicles.length !== vehicles.length && (
-                  <span className="text-blue-600 ml-2">
-                    ({filteredVehicles.length} filtered on this page)
-                  </span>
-                )}
               </div>
               
               <div className="flex items-center gap-2">

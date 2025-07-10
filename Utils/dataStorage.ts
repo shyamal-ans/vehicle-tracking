@@ -146,6 +146,12 @@ export const getVehicles = (
     pageSize?: number;
     startDate?: string;
     endDate?: string;
+    server?: string;
+    status?: string;
+    platform?: string;
+    company?: string;
+    region?: string;
+    project?: string;
   }
 ): { vehicles: VehicleData[]; total: number; page: number; pageSize: number } => {
   try {
@@ -163,6 +169,50 @@ export const getVehicles = (
         Object.values(vehicle).some((val) =>
           String(val).toLowerCase().includes(searchLower)
         )
+      );
+    }
+
+    // Apply server filter (IP)
+    if (filters?.server) {
+      filteredVehicles = filteredVehicles.filter(vehicle =>
+        vehicle.ip.toLowerCase().includes(filters.server!.toLowerCase())
+      );
+    }
+
+    // Apply status filter (InActiveDays)
+    if (filters?.status) {
+      if (filters.status === "Active") {
+        filteredVehicles = filteredVehicles.filter(vehicle => vehicle.InActiveDays === 0);
+      } else if (filters.status === "Inactive") {
+        filteredVehicles = filteredVehicles.filter(vehicle => vehicle.InActiveDays > 0);
+      }
+    }
+
+    // Apply platform filter (projectName)
+    if (filters?.platform) {
+      filteredVehicles = filteredVehicles.filter(vehicle =>
+        vehicle.projectName.toLowerCase().includes(filters.platform!.toLowerCase())
+      );
+    }
+
+    // Apply company filter
+    if (filters?.company) {
+      filteredVehicles = filteredVehicles.filter(vehicle =>
+        vehicle.companyName.toLowerCase().includes(filters.company!.toLowerCase())
+      );
+    }
+
+    // Apply region filter
+    if (filters?.region) {
+      filteredVehicles = filteredVehicles.filter(vehicle =>
+        vehicle.region.toLowerCase().includes(filters.region!.toLowerCase())
+      );
+    }
+
+    // Apply project filter (projectName)
+    if (filters?.project) {
+      filteredVehicles = filteredVehicles.filter(vehicle =>
+        vehicle.projectName.toLowerCase().includes(filters.project!.toLowerCase())
       );
     }
     
@@ -183,7 +233,7 @@ export const getVehicles = (
     const page = filters?.page || 1;
     const pageSize = filters?.pageSize || 10;
     const startIndex = (page - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
+    const endIndex = pageSize >= 999999 ? filteredVehicles.length : startIndex + pageSize;
     const paginatedVehicles = filteredVehicles.slice(startIndex, endIndex);
     
     return {

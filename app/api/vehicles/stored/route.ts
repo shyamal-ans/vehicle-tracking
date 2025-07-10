@@ -11,6 +11,14 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get('pageSize') || '100');
     const startDate = searchParams.get('startDate') || undefined;
     const endDate = searchParams.get('endDate') || undefined;
+    
+    // Get filter parameters
+    const server = searchParams.get('server') || undefined;
+    const status = searchParams.get('status') || undefined;
+    const platform = searchParams.get('platform') || undefined;
+    const company = searchParams.get('company') || undefined;
+    const region = searchParams.get('region') || undefined;
+    const project = searchParams.get('project') || undefined;
 
     // Get vehicles with filters
     const result = getVehicles({
@@ -18,7 +26,13 @@ export async function GET(request: NextRequest) {
       page,
       pageSize,
       startDate,
-      endDate
+      endDate,
+      server,
+      status,
+      platform,
+      company,
+      region,
+      project
     });
 
     // Get metadata about the stored data
@@ -59,7 +73,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     // Get filters from request body
-    const { search, page = 1, pageSize = 100, startDate, endDate } = body;
+    const { 
+      search, 
+      page = 1, 
+      pageSize = 100, 
+      startDate, 
+      endDate,
+      server,
+      status,
+      platform,
+      company,
+      region,
+      project
+    } = body;
 
     // Get vehicles with filters
     const result = getVehicles({
@@ -67,7 +93,13 @@ export async function POST(request: NextRequest) {
       page,
       pageSize,
       startDate,
-      endDate
+      endDate,
+      server,
+      status,
+      platform,
+      company,
+      region,
+      project
     });
 
     // Get metadata about the stored data
