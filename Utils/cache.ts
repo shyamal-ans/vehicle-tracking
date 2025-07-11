@@ -82,6 +82,12 @@ export const clearCache = () => {
   return cache.flushAll();
 };
 
+export const clearFilterOptionsCache = () => {
+  const cache = getCacheInstance();
+  console.log('🗑️ clearFilterOptionsCache: clearing only filter options');
+  return cache.del(CACHE_KEYS.FILTER_OPTIONS);
+};
+
 export const getCacheStats = () => {
   const cache = getCacheInstance();
   return cache.getStats();

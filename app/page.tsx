@@ -32,6 +32,7 @@ const pageSize = 100;
 
 const VehicleTrackingDashboard = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [allVehiclesCache, setAllVehiclesCache] = useState<Vehicle[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVehicles, setSelectedVehicles] = useState<Set<number>>(
@@ -101,8 +102,29 @@ const VehicleTrackingDashboard = () => {
       setTotalPages(storedData.pagination?.totalPages || 1);
       // Reset selections on new data fetch
       setSelectedVehicles(new Set());
+      
+      // Populate cache with all data if no filters are applied
+      if (Object.values(filters).every(filter => !filter) && !searchQuery) {
+        populateCache();
+      }
     }
-  }, [storedData]);
+  }, [storedData, filters, searchQuery]);
+
+  // Function to populate cache with all vehicle data
+  const populateCache = async () => {
+    if (allVehiclesCache.length === 0) {
+      try {
+        const response = await fetch('/api/vehicles/stored?pageSize=999999&page=1');
+        const data = await response.json();
+        if (data.success) {
+          setAllVehiclesCache(data.data);
+          console.log('📦 Cache populated with', data.data.length, 'vehicles');
+        }
+      } catch (error) {
+        console.error('Error populating cache:', error);
+      }
+    }
+  };
 
   // Reset to page 1 when search or filters change
   useEffect(() => {
@@ -159,20 +181,47 @@ const VehicleTrackingDashboard = () => {
     if (Object.values(filters).every(filter => !filter) && !searchQuery) {
       // If no filters applied, select all vehicles in the dataset
       try {
-        // Fetch all vehicle IMEIs to select them all
-        const response = await fetch('/api/vehicles/stored?pageSize=999999&page=1');
-        const data = await response.json();
-        
-        if (data.success) {
-          const allImeiNos = data.data.map((v: Vehicle) => v.imeiNo);
-          setSelectedVehicles(new Set(allImeiNos));
+        if (allVehiclesCache.length === 0) {
+          await populateCache();
         }
+        
+        const allImeiNos = allVehiclesCache.map((v: Vehicle) => v.imeiNo);
+        setSelectedVehicles(new Set(allImeiNos));
       } catch (error) {
         console.error('Error selecting all vehicles:', error);
       }
     } else {
-      // If filters applied, select only filtered vehicles on current page
-      handleSelectAllOnPage();
+      // If filters applied, select all filtered vehicles across all pages (unique, non-empty IMEIs)
+      try {
+        const filterParams = new URLSearchParams({
+          pageSize: '999999',
+          page: '1',
+          ...(filters.server && { server: filters.server }),
+          ...(filters.status && { status: filters.status }),
+          ...(filters.platform && { platform: filters.platform }),
+          ...(filters.company && { company: filters.company }),
+          ...(filters.region && { region: filters.region }),
+          ...(filters.project && { project: filters.project }),
+          ...(searchQuery && { search: searchQuery }),
+        });
+        
+        const response = await fetch(`/api/vehicles/stored?${filterParams}`);
+        const data = await response.json();
+        
+        if (data.success) {
+          // Remove duplicates and undefined/null IMEIs
+          const allFilteredImeiNos = data.data
+            .map((v: Vehicle) => v.imeiNo)
+            .filter((imei: number | undefined, idx: number, arr: (number | undefined)[]) => imei && arr.indexOf(imei) === idx);
+          setSelectedVehicles(new Set(allFilteredImeiNos));
+          // Debug log
+          console.log('Filtered:', data.data.length, 'Unique IMEIs:', allFilteredImeiNos.length);
+        }
+      } catch (error) {
+        console.error('Error selecting all filtered vehicles:', error);
+        // Fallback to current page selection
+        handleSelectAllOnPage();
+      }
     }
   };
 
@@ -181,15 +230,53 @@ const VehicleTrackingDashboard = () => {
     if (selectedVehicles.size === 0) return;
 
     try {
-      // If no filters applied and all data is selected, we need to fetch all data
-      if (Object.values(filters).every(filter => !filter) && !searchQuery && selectedVehicles.size === totalVehicles) {
-        // Export all vehicles - fetch all data without pagination
-        const response = await fetch('/api/vehicles/stored?pageSize=999999&page=1');
-        const data = await response.json();
+      // Check if we're exporting all vehicles (no filters + all data selected)
+      const isExportingAll = Object.values(filters).every(filter => !filter) && 
+                            !searchQuery && 
+                            areAllDataSelected;
+
+      if (isExportingAll) {
+        // Use cached data if available, otherwise populate cache
+        if (allVehiclesCache.length === 0) {
+          await populateCache();
+        }
         
-        if (data.success) {
-          const allVehicles = data.data;
-          const exportData = allVehicles.map((v: Vehicle) => ({
+        const allVehicles = allVehiclesCache;
+
+        const exportData = allVehicles.map((v: Vehicle) => ({
+          "Vehicle Name": v.vehicleName,
+          Reseller: v.resellerName,
+          IP: v.ip,
+          Company: v.companyName,
+          Branch: v.branchName,
+          "Inactive Days": v.InActiveDays,
+          Admin: v.adminName,
+          "Vehicle No": v.vehicleNo,
+          "Created Date": v.createdDate,
+          IMEI: v.imeiNo,
+          Project: v.projectName,
+          Region: v.region,
+          "Project ID": v.projectId,
+          "SIM No": v.simNo,
+          Username: v.username,
+          "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
+          "Start Date": v.startDate || "-",
+          "End Date": v.endDate || "-",
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "All Vehicles");
+        XLSX.writeFile(workbook, "all_vehicles.xlsx");
+      } else {
+        // Check if we have cached data that matches current filters
+        const hasFilters = Object.values(filters).some(filter => filter) || searchQuery;
+        
+        if (!hasFilters && allVehiclesCache.length > 0) {
+          // No filters applied and we have cached data - use cache
+          const selectedVehiclesData = allVehiclesCache.filter((v: Vehicle) => selectedVehicles.has(v.imeiNo));
+          
+          const exportData = selectedVehiclesData.map((v: Vehicle) => ({
             "Vehicle Name": v.vehicleName,
             Reseller: v.resellerName,
             IP: v.ip,
@@ -212,38 +299,91 @@ const VehicleTrackingDashboard = () => {
 
           const worksheet = XLSX.utils.json_to_sheet(exportData);
           const workbook = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(workbook, worksheet, "All Vehicles");
-          XLSX.writeFile(workbook, "all_vehicles.xlsx");
-        }
-      } else {
-        // Export only selected vehicles from current filtered data
-        const selected = vehicles
-          .filter((v) => selectedVehicles.has(v.imeiNo))
-          .map((v) => ({
-            "Vehicle Name": v.vehicleName,
-            Reseller: v.resellerName,
-            IP: v.ip,
-            Company: v.companyName,
-            Branch: v.branchName,
-            "Inactive Days": v.InActiveDays,
-            Admin: v.adminName,
-            "Vehicle No": v.vehicleNo,
-            "Created Date": v.createdDate,
-            IMEI: v.imeiNo,
-            Project: v.projectName,
-            Region: v.region,
-            "Project ID": v.projectId,
-            "SIM No": v.simNo,
-            Username: v.username,
-            "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
-            "Start Date": v.startDate || "-",
-            "End Date": v.endDate || "-",
-          }));
+          XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
+          XLSX.writeFile(workbook, "selected_vehicles.xlsx");
+        } else {
+          // Filters applied or no cache - need to fetch filtered data
+          const filterParams = new URLSearchParams({
+            pageSize: '999999',
+            page: '1',
+            ...(filters.server && { server: filters.server }),
+            ...(filters.status && { status: filters.status }),
+            ...(filters.platform && { platform: filters.platform }),
+            ...(filters.company && { company: filters.company }),
+            ...(filters.region && { region: filters.region }),
+            ...(filters.project && { project: filters.project }),
+            ...(searchQuery && { search: searchQuery }),
+          });
+          
+          const response = await fetch(`/api/vehicles/stored?${filterParams}`);
+          const data = await response.json();
+          
+          if (data.success) {
+            const allFilteredVehicles = data.data;
+            
+            // Check if all filtered vehicles are selected
+            const allFilteredImeiNos = allFilteredVehicles.map((v: Vehicle) => v.imeiNo);
+            const allFilteredSelected = allFilteredImeiNos.every((imei: number) => selectedVehicles.has(imei));
+            
+            if (allFilteredSelected && selectedVehicles.size === allFilteredVehicles.length) {
+              // All filtered vehicles are selected - export all filtered data
+              const exportData = allFilteredVehicles.map((v: Vehicle) => ({
+                "Vehicle Name": v.vehicleName,
+                Reseller: v.resellerName,
+                IP: v.ip,
+                Company: v.companyName,
+                Branch: v.branchName,
+                "Inactive Days": v.InActiveDays,
+                Admin: v.adminName,
+                "Vehicle No": v.vehicleNo,
+                "Created Date": v.createdDate,
+                IMEI: v.imeiNo,
+                Project: v.projectName,
+                Region: v.region,
+                "Project ID": v.projectId,
+                "SIM No": v.simNo,
+                Username: v.username,
+                "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
+                "Start Date": v.startDate || "-",
+                "End Date": v.endDate || "-",
+              }));
 
-        const worksheet = XLSX.utils.json_to_sheet(selected);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
-        XLSX.writeFile(workbook, "selected_vehicles.xlsx");
+              const worksheet = XLSX.utils.json_to_sheet(exportData);
+              const workbook = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(workbook, worksheet, "Filtered Vehicles");
+              XLSX.writeFile(workbook, "filtered_vehicles.xlsx");
+            } else {
+              // Only some vehicles are selected - filter to only selected ones
+              const selectedVehiclesData = allFilteredVehicles.filter((v: Vehicle) => selectedVehicles.has(v.imeiNo));
+              
+              const exportData = selectedVehiclesData.map((v: Vehicle) => ({
+                "Vehicle Name": v.vehicleName,
+                Reseller: v.resellerName,
+                IP: v.ip,
+                Company: v.companyName,
+                Branch: v.branchName,
+                "Inactive Days": v.InActiveDays,
+                Admin: v.adminName,
+                "Vehicle No": v.vehicleNo,
+                "Created Date": v.createdDate,
+                IMEI: v.imeiNo,
+                Project: v.projectName,
+                Region: v.region,
+                "Project ID": v.projectId,
+                "SIM No": v.simNo,
+                Username: v.username,
+                "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
+                "Start Date": v.startDate || "-",
+                "End Date": v.endDate || "-",
+              }));
+
+              const worksheet = XLSX.utils.json_to_sheet(exportData);
+              const workbook = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
+              XLSX.writeFile(workbook, "selected_vehicles.xlsx");
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Error exporting vehicles:', error);
