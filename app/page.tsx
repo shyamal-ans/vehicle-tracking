@@ -28,16 +28,15 @@ type Vehicle = {
   endDate?: string;
 };
 
-const pageSize = 100;
+// 1. Change the default pageSize from 100 to 1000
+const pageSize = 1000;
 
 const VehicleTrackingDashboard = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [allVehiclesCache, setAllVehiclesCache] = useState<Vehicle[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedVehicles, setSelectedVehicles] = useState<Set<number>>(
-    new Set()
-  );
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [hasAutoFetched, setHasAutoFetched] = useState(false);
   const [totalVehicles, setTotalVehicles] = useState(0);
@@ -53,14 +52,44 @@ const VehicleTrackingDashboard = () => {
     project: ""
   });
 
-  // Query for stored vehicle data with pagination and filters
+  // Sorting state and logic
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Vehicle | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
+
+  const handleSort = (key: keyof Vehicle) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        // Toggle direction
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const sortedVehicles = React.useMemo(() => {
+    if (!sortConfig.key) return vehicles;
+    const key = sortConfig.key;
+    const sorted = [...vehicles].sort((a, b) => {
+      const aValue = a[key];
+      const bValue = b[key];
+      if (aValue === undefined || bValue === undefined) return 0;
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+      return sortConfig.direction === 'asc'
+        ? String(aValue).localeCompare(String(bValue))
+        : String(bValue).localeCompare(String(aValue));
+    });
+    return sorted;
+  }, [vehicles, sortConfig]);
+
+  // Query for stored vehicle data with pagination and filters (without search)
   const { 
     data: storedData, 
     isLoading: isLoadingStored, 
     error: storedError,
     refetch: refetchStored
   } = useGetStoredVehiclesQuery({
-    search: searchQuery,
+    search: "", // Remove search from API call
     page: currentPage,
     pageSize,
     server: filters.server,
@@ -70,6 +99,22 @@ const VehicleTrackingDashboard = () => {
     region: filters.region,
     project: filters.project,
   });
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Debug search functionality
+  useEffect(() => {
+    console.log('🔍 Search query changed:', searchQuery);
+    console.log('🔍 Debounced search query:', debouncedSearchQuery);
+    console.log('🔍 Current filters:', filters);
+  }, [searchQuery, debouncedSearchQuery, filters]);
 
   // Query for filter options
   const { data: filterOptions } = useGetFilterOptionsQuery();
@@ -97,18 +142,54 @@ const VehicleTrackingDashboard = () => {
   // Update local vehicle data when stored data changes
   useEffect(() => {
     if (storedData?.data) {
-      setVehicles(storedData.data);
-      setTotalVehicles(storedData.pagination?.total || 0);
-      setTotalPages(storedData.pagination?.totalPages || 1);
-      // Reset selections on new data fetch
-      setSelectedVehicles(new Set());
+      // Apply client-side search and filtering
+      let filteredData = [...storedData.data];
       
-      // Populate cache with all data if no filters are applied
+      // Apply search filter on client side
+      if (debouncedSearchQuery) {
+        const searchLower = debouncedSearchQuery.toLowerCase();
+        filteredData = filteredData.filter(vehicle =>
+          Object.values(vehicle).some((val) =>
+            String(val).toLowerCase().includes(searchLower)
+          )
+        );
+      }
+      
+      setVehicles(filteredData);
+      setTotalVehicles(filteredData.length);
+      setTotalPages(Math.ceil(filteredData.length / pageSize));
+      
+      // Do NOT reset selections here!
+      // setSelectedVehicles(new Set());
+      
+      // Update cache with fresh data if no filters are applied
       if (Object.values(filters).every(filter => !filter) && !searchQuery) {
-        populateCache();
+        // Update cache with fresh data instead of clearing it
+        setAllVehiclesCache(storedData.data);
+        localStorage.setItem('vehicleCache', JSON.stringify(storedData.data));
+        localStorage.setItem('vehicleCacheTimestamp', Date.now().toString());
+        console.log('🔄 Cache updated with fresh data:', storedData.data.length, 'vehicles');
       }
     }
-  }, [storedData, filters, searchQuery]);
+  }, [storedData, filters, debouncedSearchQuery, searchQuery, pageSize]);
+
+  // Search in cache when available
+  useEffect(() => {
+    if (allVehiclesCache.length > 0 && debouncedSearchQuery) {
+      console.log('🔍 Searching in cache:', debouncedSearchQuery);
+      const searchLower = debouncedSearchQuery.toLowerCase();
+      const filteredData = allVehiclesCache.filter(vehicle =>
+        Object.values(vehicle).some((val) =>
+          String(val).toLowerCase().includes(searchLower)
+        )
+      );
+      
+      setVehicles(filteredData);
+      setTotalVehicles(filteredData.length);
+      setTotalPages(Math.ceil(filteredData.length / pageSize));
+      console.log('🔍 Search results:', filteredData.length, 'vehicles found');
+    }
+  }, [debouncedSearchQuery, allVehiclesCache, pageSize]);
 
   // Function to populate cache with all vehicle data
   const populateCache = async () => {
@@ -118,7 +199,10 @@ const VehicleTrackingDashboard = () => {
         const data = await response.json();
         if (data.success) {
           setAllVehiclesCache(data.data);
-          console.log('📦 Cache populated with', data.data.length, 'vehicles');
+          // Save to localStorage for persistence
+          localStorage.setItem('vehicleCache', JSON.stringify(data.data));
+          localStorage.setItem('vehicleCacheTimestamp', Date.now().toString());
+          console.log('📦 Cache populated and saved to localStorage:', data.data.length, 'vehicles');
         }
       } catch (error) {
         console.error('Error populating cache:', error);
@@ -139,144 +223,20 @@ const VehicleTrackingDashboard = () => {
     }));
   };
 
-  // Handle checkbox selection for individual vehicles
-  const handleCheckboxChange = (imeiNo: number) => {
-    setSelectedVehicles((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(imeiNo)) {
-        newSet.delete(imeiNo);
-      } else {
-        newSet.add(imeiNo);
-      }
-      return newSet;
-    });
-  };
-
-  // Select/deselect all vehicles on current page
-  const currentImeiNos = vehicles.map((v) => v.imeiNo);
-  const areAllSelected = currentImeiNos.every((imei) =>
-    selectedVehicles.has(imei)
-  );
-  
-  // Check if all vehicles across all data are selected (when no filters applied)
-  const areAllDataSelected = Object.values(filters).every(filter => !filter) && 
-    !searchQuery && 
-    selectedVehicles.size === totalVehicles && 
-    totalVehicles > 0;
-
-  const handleSelectAllOnPage = () => {
-    setSelectedVehicles((prev) => {
-      const newSet = new Set(prev);
-      if (areAllSelected) {
-        currentImeiNos.forEach((imei) => newSet.delete(imei));
-      } else {
-        currentImeiNos.forEach((imei) => newSet.add(imei));
-      }
-      return newSet;
-    });
-  };
-
-  // Select all vehicles across all pages (when no filters applied)
-  const handleSelectAllData = async () => {
-    if (Object.values(filters).every(filter => !filter) && !searchQuery) {
-      // If no filters applied, select all vehicles in the dataset
-      try {
-        if (allVehiclesCache.length === 0) {
-          await populateCache();
-        }
-        
-        const allImeiNos = allVehiclesCache.map((v: Vehicle) => v.imeiNo);
-        setSelectedVehicles(new Set(allImeiNos));
-      } catch (error) {
-        console.error('Error selecting all vehicles:', error);
-      }
-    } else {
-      // If filters applied, select all filtered vehicles across all pages (unique, non-empty IMEIs)
-      try {
-        const filterParams = new URLSearchParams({
-          pageSize: '999999',
-          page: '1',
-          ...(filters.server && { server: filters.server }),
-          ...(filters.status && { status: filters.status }),
-          ...(filters.platform && { platform: filters.platform }),
-          ...(filters.company && { company: filters.company }),
-          ...(filters.region && { region: filters.region }),
-          ...(filters.project && { project: filters.project }),
-          ...(searchQuery && { search: searchQuery }),
-        });
-        
-        const response = await fetch(`/api/vehicles/stored?${filterParams}`);
-        const data = await response.json();
-        
-        if (data.success) {
-          // Remove duplicates and undefined/null IMEIs
-          const allFilteredImeiNos = data.data
-            .map((v: Vehicle) => v.imeiNo)
-            .filter((imei: number | undefined, idx: number, arr: (number | undefined)[]) => imei && arr.indexOf(imei) === idx);
-          setSelectedVehicles(new Set(allFilteredImeiNos));
-          // Debug log
-          console.log('Filtered:', data.data.length, 'Unique IMEIs:', allFilteredImeiNos.length);
-        }
-      } catch (error) {
-        console.error('Error selecting all filtered vehicles:', error);
-        // Fallback to current page selection
-        handleSelectAllOnPage();
-      }
-    }
-  };
-
   // Export selected vehicles to Excel
   const exportSelectedVehicles = async () => {
-    if (selectedVehicles.size === 0) return;
+    // If nothing is selected, treat as 'export all filtered'
+    const isExportAllFiltered = true; // Always true now
 
     try {
-      // Check if we're exporting all vehicles (no filters + all data selected)
-      const isExportingAll = Object.values(filters).every(filter => !filter) && 
-                            !searchQuery && 
-                            areAllDataSelected;
-
+      // If no filters and export all, use cache
+      const isExportingAll = Object.values(filters).every(filter => !filter) && !searchQuery && (isExportAllFiltered || totalVehicles > 0);
       if (isExportingAll) {
-        // Use cached data if available, otherwise populate cache
         if (allVehiclesCache.length === 0) {
           await populateCache();
         }
-        
         const allVehicles = allVehiclesCache;
-
-        const exportData = allVehicles.map((v: Vehicle) => ({
-          "Vehicle Name": v.vehicleName,
-          Reseller: v.resellerName,
-          IP: v.ip,
-          Company: v.companyName,
-          Branch: v.branchName,
-          "Inactive Days": v.InActiveDays,
-          Admin: v.adminName,
-          "Vehicle No": v.vehicleNo,
-          "Created Date": v.createdDate,
-          IMEI: v.imeiNo,
-          Project: v.projectName,
-          Region: v.region,
-          "Project ID": v.projectId,
-          "SIM No": v.simNo,
-          Username: v.username,
-          "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
-          "Start Date": v.startDate || "-",
-          "End Date": v.endDate || "-",
-        }));
-
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "All Vehicles");
-        XLSX.writeFile(workbook, "all_vehicles.xlsx");
-      } else {
-        // Check if we have cached data that matches current filters
-        const hasFilters = Object.values(filters).some(filter => filter) || searchQuery;
-        
-        if (!hasFilters && allVehiclesCache.length > 0) {
-          // No filters applied and we have cached data - use cache
-          const selectedVehiclesData = allVehiclesCache.filter((v: Vehicle) => selectedVehicles.has(v.imeiNo));
-          
-          const exportData = selectedVehiclesData.map((v: Vehicle) => ({
+          const exportData = allVehicles.map((v: Vehicle) => ({
             "Vehicle Name": v.vehicleName,
             Reseller: v.resellerName,
             IP: v.ip,
@@ -299,91 +259,77 @@ const VehicleTrackingDashboard = () => {
 
           const worksheet = XLSX.utils.json_to_sheet(exportData);
           const workbook = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
-          XLSX.writeFile(workbook, "selected_vehicles.xlsx");
-        } else {
-          // Filters applied or no cache - need to fetch filtered data
-          const filterParams = new URLSearchParams({
-            pageSize: '999999',
-            page: '1',
-            ...(filters.server && { server: filters.server }),
-            ...(filters.status && { status: filters.status }),
-            ...(filters.platform && { platform: filters.platform }),
-            ...(filters.company && { company: filters.company }),
-            ...(filters.region && { region: filters.region }),
-            ...(filters.project && { project: filters.project }),
-            ...(searchQuery && { search: searchQuery }),
-          });
-          
-          const response = await fetch(`/api/vehicles/stored?${filterParams}`);
-          const data = await response.json();
-          
-          if (data.success) {
-            const allFilteredVehicles = data.data;
-            
-            // Check if all filtered vehicles are selected
-            const allFilteredImeiNos = allFilteredVehicles.map((v: Vehicle) => v.imeiNo);
-            const allFilteredSelected = allFilteredImeiNos.every((imei: number) => selectedVehicles.has(imei));
-            
-            if (allFilteredSelected && selectedVehicles.size === allFilteredVehicles.length) {
-              // All filtered vehicles are selected - export all filtered data
-              const exportData = allFilteredVehicles.map((v: Vehicle) => ({
-                "Vehicle Name": v.vehicleName,
-                Reseller: v.resellerName,
-                IP: v.ip,
-                Company: v.companyName,
-                Branch: v.branchName,
-                "Inactive Days": v.InActiveDays,
-                Admin: v.adminName,
-                "Vehicle No": v.vehicleNo,
-                "Created Date": v.createdDate,
-                IMEI: v.imeiNo,
-                Project: v.projectName,
-                Region: v.region,
-                "Project ID": v.projectId,
-                "SIM No": v.simNo,
-                Username: v.username,
-                "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
-                "Start Date": v.startDate || "-",
-                "End Date": v.endDate || "-",
-              }));
+          XLSX.utils.book_append_sheet(workbook, worksheet, "All Vehicles");
+          XLSX.writeFile(workbook, "all_vehicles.xlsx");
+        return;
+      }
 
-              const worksheet = XLSX.utils.json_to_sheet(exportData);
-              const workbook = XLSX.utils.book_new();
-              XLSX.utils.book_append_sheet(workbook, worksheet, "Filtered Vehicles");
-              XLSX.writeFile(workbook, "filtered_vehicles.xlsx");
-            } else {
-              // Only some vehicles are selected - filter to only selected ones
-              const selectedVehiclesData = allFilteredVehicles.filter((v: Vehicle) => selectedVehicles.has(v.imeiNo));
-              
-              const exportData = selectedVehiclesData.map((v: Vehicle) => ({
-                "Vehicle Name": v.vehicleName,
-                Reseller: v.resellerName,
-                IP: v.ip,
-                Company: v.companyName,
-                Branch: v.branchName,
-                "Inactive Days": v.InActiveDays,
-                Admin: v.adminName,
-                "Vehicle No": v.vehicleNo,
-                "Created Date": v.createdDate,
-                IMEI: v.imeiNo,
-                Project: v.projectName,
-                Region: v.region,
-                "Project ID": v.projectId,
-                "SIM No": v.simNo,
-                Username: v.username,
-                "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
-                "Start Date": v.startDate || "-",
-                "End Date": v.endDate || "-",
-              }));
-
-              const worksheet = XLSX.utils.json_to_sheet(exportData);
-              const workbook = XLSX.utils.book_new();
-              XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
-              XLSX.writeFile(workbook, "selected_vehicles.xlsx");
-            }
-          }
+      // If filters applied, fetch all filtered vehicles
+      const filterParams = new URLSearchParams({
+        pageSize: '999999',
+        page: '1',
+        ...(filters.server && { server: filters.server }),
+        ...(filters.status && { status: filters.status }),
+        ...(filters.platform && { platform: filters.platform }),
+        ...(filters.company && { company: filters.company }),
+        ...(filters.region && { region: filters.region }),
+        ...(filters.project && { project: filters.project }),
+        ...(searchQuery && { search: searchQuery }),
+      });
+      const response = await fetch(`/api/vehicles/stored?${filterParams}`);
+      const data = await response.json();
+      if (data.success) {
+        let exportData;
+        if (isExportAllFiltered) {
+          // Export all filtered vehicles
+          exportData = data.data.map((v: Vehicle) => ({
+            "Vehicle Name": v.vehicleName,
+            Reseller: v.resellerName,
+            IP: v.ip,
+            Company: v.companyName,
+            Branch: v.branchName,
+            "Inactive Days": v.InActiveDays,
+            Admin: v.adminName,
+            "Vehicle No": v.vehicleNo,
+            "Created Date": v.createdDate,
+            IMEI: v.imeiNo,
+            Project: v.projectName,
+            Region: v.region,
+            "Project ID": v.projectId,
+            "SIM No": v.simNo,
+            Username: v.username,
+            "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
+            "Start Date": v.startDate || "-",
+            "End Date": v.endDate || "-",
+          }));
+      } else {
+          // Export only selected vehicles
+          exportData = data.data.map((v: Vehicle) => ({
+            "Vehicle Name": v.vehicleName,
+            Reseller: v.resellerName,
+            IP: v.ip,
+            Company: v.companyName,
+            Branch: v.branchName,
+            "Inactive Days": v.InActiveDays,
+            Admin: v.adminName,
+            "Vehicle No": v.vehicleNo,
+            "Created Date": v.createdDate,
+            IMEI: v.imeiNo,
+            Project: v.projectName,
+            Region: v.region,
+            "Project ID": v.projectId,
+            "SIM No": v.simNo,
+            Username: v.username,
+            "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
+            "Start Date": v.startDate || "-",
+            "End Date": v.endDate || "-",
+          }));
         }
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
+        XLSX.writeFile(workbook, "selected_vehicles.xlsx");
       }
     } catch (error) {
       console.error('Error exporting vehicles:', error);
@@ -394,6 +340,7 @@ const VehicleTrackingDashboard = () => {
   // Reset search and filters
   const resetFilters = () => {
     setSearchQuery("");
+    setDebouncedSearchQuery("");
     setFilters({
       server: "",
       status: "",
@@ -408,6 +355,9 @@ const VehicleTrackingDashboard = () => {
   const isLoading = isLoadingStored || isFetching;
   const error = storedError;
 
+  // Add a helper for filtersActive
+  const filtersActive = Object.values(filters).some(f => f) || !!searchQuery;
+
   // Calculate pagination info
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + vehicles.length;
@@ -415,23 +365,40 @@ const VehicleTrackingDashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6 overflow-x-auto overflow-y-hidden">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
+        {/* Navigation Bar */}
+        <div className="bg-white rounded-xl shadow-lg p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">Vehicle Tracking Dashboard</h1>
+            <a
+              href="/Dashboard"
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Analytics Dashboard
+            </a>
+          </div>
+        </div>
+
+        {/* Search and Actions Bar */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">Vehicle Tracking Dashboard</h1>
-              <p className="text-gray-600">
-                {storedData?.metadata ? (
-                  <>
-                    Last updated: {formatDateTime(storedData.metadata.lastUpdated)} | 
-                    Total records: {storedData.metadata.totalRecords.toLocaleString()}
-                  </>
-                ) : (
-                  "No data available"
-                )}
-              </p>
+            <div className="flex-1 flex items-center gap-3">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search vehicles..."
+                className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <button
+                onClick={resetFilters}
+                className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+              >
+                Reset
+              </button>
             </div>
-
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => triggerFetch()}
@@ -453,13 +420,15 @@ const VehicleTrackingDashboard = () => {
 
               <button
                 onClick={exportSelectedVehicles}
-                disabled={selectedVehicles.size === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                {areAllDataSelected ? `Export All (${totalVehicles.toLocaleString()})` : `Export Selected (${selectedVehicles.size})`}
+                {filtersActive
+                  ? `Export All Filtered (${totalVehicles})`
+                  : `Export All (${totalVehicles})`
+                }
               </button>
 
               <button
@@ -513,19 +482,6 @@ const VehicleTrackingDashboard = () => {
             {/* Filters Content */}
             <div className="flex-1 overflow-y-auto p-6">
               <div className="space-y-6">
-                {/* Search */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Search
-                  </label>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search vehicles..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
 
                 {/* Server Filter */}
                 <div>
@@ -639,12 +595,6 @@ const VehicleTrackingDashboard = () => {
                 >
                   Reset
                 </button>
-                <button
-                  onClick={() => setShowFilters(false)}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  Apply
-                </button>
               </div>
             </div>
           </div>
@@ -671,31 +621,257 @@ const VehicleTrackingDashboard = () => {
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <input
-                      type="checkbox"
-                      checked={areAllDataSelected}
-                      onChange={handleSelectAllData}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSort('ip')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      SERVER
+                      {sortConfig.key === 'ip' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SERVER</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VEHICLE NO</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VEHICLE NAME</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IMEI</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SIM NO</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">COMPANY</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BRANCH</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PROJECT</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">INSTALLATION DATE</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RESELLER</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">INACTIVE DAYS</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ADMIN</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">REGION</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PROJECT ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">USERNAME</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">FETCHED AT</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">START DATE</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">END DATE</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('vehicleNo')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      VEHICLE NO
+                      {sortConfig.key === 'vehicleNo' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('vehicleName')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      VEHICLE NAME
+                      {sortConfig.key === 'vehicleName' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('imeiNo')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      IMEI
+                      {sortConfig.key === 'imeiNo' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('simNo')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      SIM NO
+                      {sortConfig.key === 'simNo' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('companyName')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      COMPANY
+                      {sortConfig.key === 'companyName' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('branchName')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      BRANCH
+                      {sortConfig.key === 'branchName' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('projectName')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      PROJECT
+                      {sortConfig.key === 'projectName' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('createdDate')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      INSTALLATION DATE
+                      {sortConfig.key === 'createdDate' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('resellerName')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      RESELLER
+                      {sortConfig.key === 'resellerName' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('InActiveDays')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      INACTIVE DAYS
+                      {sortConfig.key === 'InActiveDays' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('adminName')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      ADMIN
+                      {sortConfig.key === 'adminName' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('region')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      REGION
+                      {sortConfig.key === 'region' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('projectId')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      PROJECT ID
+                      {sortConfig.key === 'projectId' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('username')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      USERNAME
+                      {sortConfig.key === 'username' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('fetchedAt')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      FETCHED AT
+                      {sortConfig.key === 'fetchedAt' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('startDate')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      START DATE
+                      {sortConfig.key === 'startDate' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => handleSort('endDate')}
+                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                    >
+                      END DATE
+                      {sortConfig.key === 'endDate' && (
+                        <span className="text-blue-600">
+                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </button>
+                  </th>
                 </tr>
               </thead>
 
@@ -711,17 +887,9 @@ const VehicleTrackingDashboard = () => {
                       </div>
                     </td>
                   </tr>
-                ) : vehicles.length > 0 ? (
-                  vehicles.map((v) => (
+                ) : sortedVehicles.length > 0 ? (
+                  sortedVehicles.map((v) => (
                     <tr key={v.imeiNo} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <input
-                          type="checkbox"
-                          checked={selectedVehicles.has(v.imeiNo)}
-                          onChange={() => handleCheckboxChange(v.imeiNo)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">{v.ip}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">{v.vehicleNo}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{v.vehicleName}</td>
