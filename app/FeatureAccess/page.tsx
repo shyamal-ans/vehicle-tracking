@@ -104,6 +104,5 @@ export default function RolePermissionManager() {
                     </div>
                 </div>
             </div>
-        </div>
     );
 }
