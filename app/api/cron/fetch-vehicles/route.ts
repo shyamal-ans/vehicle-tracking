@@ -94,14 +94,25 @@ async function fetchAllVehicles() {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔄 Cron job triggered - fetching fresh vehicle data...');
+    console.log('🔄 Cron job triggered - checking data freshness...');
     
     // Get current data age for logging
     const dataAge = getDataAge();
     console.log(`📊 Current data age: ${dataAge?.toFixed(1)} hours`);
     
-    // Always fetch fresh data when cron runs
-    console.log('🚀 Fetching fresh data from API...');
+    // Check if data is fresh (less than 1 hour old)
+    if (dataAge !== null && dataAge < 1) {
+      console.log('✅ Data is fresh (less than 1 hour old) - skipping fetch');
+      return NextResponse.json({
+        success: true,
+        message: 'Data is fresh, no fetch needed',
+        type: 'skip_fresh',
+        dataAge: dataAge,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    console.log('🚀 Data is stale or missing - fetching fresh data from API...');
 
     // Fetch all vehicles from the API
     const vehicles = await fetchAllVehicles();

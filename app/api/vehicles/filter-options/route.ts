@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readVehicleData, VehicleData } from '@/Utils/dataStorage';
-import { getCachedFilterOptions, setCachedFilterOptions, clearCache } from '@/Utils/cache';
+import { getCachedFilterOptions, setCachedFilterOptions, clearFilterOptionsCache } from '@/Utils/cache';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,6 +8,12 @@ export async function GET(request: NextRequest) {
     const forceRefresh = searchParams.get('refresh') === 'true';
     
     console.log('🔍 Filter options request:', { forceRefresh });
+    
+    // Clear cache if force refresh is requested
+    if (forceRefresh) {
+      console.log('🔄 Force refresh requested - clearing filter options cache');
+      clearFilterOptionsCache();
+    }
     
     // Try to get cached filter options first (unless force refresh)
     if (!forceRefresh) {
@@ -60,7 +66,7 @@ export async function GET(request: NextRequest) {
     const companies = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.companyName))).sort();
     const platforms = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectName))).sort();
     const regions = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.region))).sort();
-    const projects = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectId))).sort();
+    const projects = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectName))).sort();
 
     const filterOptions = {
       servers,
@@ -116,7 +122,7 @@ export async function POST() {
     console.log('🔄 Force refreshing filter options...');
     
     // Clear cached filter options
-    clearCache();
+    clearFilterOptionsCache();
     
     // Recompute from fresh data
     const data = readVehicleData();
@@ -141,7 +147,7 @@ export async function POST() {
     const companies = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.companyName))).sort();
     const platforms = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectName))).sort();
     const regions = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.region))).sort();
-    const projects = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectId))).sort();
+    const projects = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectName))).sort();
 
     const filterOptions = {
       servers,
