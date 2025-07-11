@@ -139,25 +139,12 @@ const VehicleTrackingDashboard = () => {
     }
   }, [storedData, isLoadingStored, hasAutoFetched, triggerFetch, refetchStored]);
 
-  // Update local vehicle data when stored data changes
+  // Update local vehicle data when stored data changes (only when not searching)
   useEffect(() => {
-    if (storedData?.data) {
-      // Apply client-side search and filtering
-      let filteredData = [...storedData.data];
-      
-      // Apply search filter on client side
-      if (debouncedSearchQuery) {
-        const searchLower = debouncedSearchQuery.toLowerCase();
-        filteredData = filteredData.filter(vehicle =>
-          Object.values(vehicle).some((val) =>
-            String(val).toLowerCase().includes(searchLower)
-          )
-        );
-      }
-      
-      setVehicles(filteredData);
-      setTotalVehicles(filteredData.length);
-      setTotalPages(Math.ceil(filteredData.length / pageSize));
+    if (storedData?.data && !debouncedSearchQuery) {
+      setVehicles(storedData.data);
+      setTotalVehicles(storedData.pagination?.total || 0);
+      setTotalPages(storedData.pagination?.totalPages || 1);
       
       // Do NOT reset selections here!
       // setSelectedVehicles(new Set());
@@ -171,7 +158,7 @@ const VehicleTrackingDashboard = () => {
         console.log('🔄 Cache updated with fresh data:', storedData.data.length, 'vehicles');
       }
     }
-  }, [storedData, filters, debouncedSearchQuery, searchQuery, pageSize]);
+  }, [storedData, filters, debouncedSearchQuery, searchQuery]);
 
   // Search in cache when available
   useEffect(() => {
@@ -184,12 +171,24 @@ const VehicleTrackingDashboard = () => {
         )
       );
       
-      setVehicles(filteredData);
+      // Apply pagination to search results
+      const startIndex = (currentPage - 1) * pageSize;
+      const endIndex = startIndex + pageSize;
+      const paginatedData = filteredData.slice(startIndex, endIndex);
+      
+      setVehicles(paginatedData);
       setTotalVehicles(filteredData.length);
       setTotalPages(Math.ceil(filteredData.length / pageSize));
-      console.log('🔍 Search results:', filteredData.length, 'vehicles found');
+      console.log('🔍 Search results:', filteredData.length, 'vehicles found, showing page', currentPage);
+    } else if (allVehiclesCache.length > 0 && !debouncedSearchQuery) {
+      // No search query - show normal paginated data from API
+      if (storedData?.data) {
+        setVehicles(storedData.data);
+        setTotalVehicles(storedData.pagination?.total || 0);
+        setTotalPages(storedData.pagination?.totalPages || 1);
+      }
     }
-  }, [debouncedSearchQuery, allVehiclesCache, pageSize]);
+  }, [debouncedSearchQuery, allVehiclesCache, pageSize, currentPage, storedData]);
 
   // Function to populate cache with all vehicle data
   const populateCache = async () => {
@@ -213,7 +212,7 @@ const VehicleTrackingDashboard = () => {
   // Reset to page 1 when search or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filters]);
+  }, [debouncedSearchQuery, filters]);
 
   // Handle filter changes
   const handleFilterChange = (filterName: string, value: string) => {
