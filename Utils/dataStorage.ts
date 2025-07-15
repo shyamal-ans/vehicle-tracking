@@ -6,6 +6,11 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const VEHICLES_FILE = path.join(DATA_DIR, 'vehicles.json');
 const METADATA_FILE = path.join(DATA_DIR, 'metadata.json');
 
+// Simple in-memory cache (DISABLED FOR TESTING)
+let dataCache: any = null;
+let cacheTimestamp: number = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 // Ensure data directory exists
 const ensureDataDir = async () => {
   try {
@@ -16,47 +21,73 @@ const ensureDataDir = async () => {
   }
 };
 
-// Read vehicle data from JSON file
+// Read vehicle data from JSON file with caching
 export const readVehicleData = async (): Promise<any> => {
   try {
     await ensureDataDir();
     
-    const vehiclesData = await fs.readFile(VEHICLES_FILE, 'utf-8');
-    const metadataData = await fs.readFile(METADATA_FILE, 'utf-8');
+    // Check cache first (DISABLED FOR TESTING)
+    // const now = Date.now();
+    // if (dataCache && (now - cacheTimestamp) < CACHE_TTL) {
+    //   console.log(`📋 Using cached data (${dataCache.vehicles.length} vehicles)`);
+    //   return dataCache;
+    // }
+    
+    // Read files with performance optimization
+    const startTime = Date.now();
+    
+    // Read both files in parallel
+    const [vehiclesData, metadataData] = await Promise.all([
+      fs.readFile(VEHICLES_FILE, 'utf-8'),
+      fs.readFile(METADATA_FILE, 'utf-8')
+    ]);
     
     const vehicles = JSON.parse(vehiclesData);
     const metadata = JSON.parse(metadataData);
     
-    console.log(`📋 Loaded ${vehicles.length} vehicles from JSON file`);
+    const loadTime = Date.now() - startTime;
+    console.log(`📋 Loaded ${vehicles.length} vehicles from JSON file in ${loadTime}ms (RAW PERFORMANCE)`);
     
-    return {
+    const result = {
       vehicles,
       lastUpdated: metadata.lastUpdated,
       totalRecords: vehicles.length,
       metadata: metadata.metadata
     };
+    
+    // Update cache (DISABLED FOR TESTING)
+    // dataCache = result;
+    // cacheTimestamp = now;
+    
+    return result;
   } catch (error) {
     console.log('📁 No existing data found, starting fresh');
     return null;
   }
 };
 
-// Write vehicle data to JSON file
+// Write vehicle data to JSON file with optimization
 export const writeVehicleData = async (data: any): Promise<boolean> => {
   try {
     await ensureDataDir();
     
-    // Write vehicles data
-    await fs.writeFile(VEHICLES_FILE, JSON.stringify(data.vehicles, null, 2));
+    const startTime = Date.now();
     
-    // Write metadata
-    const metadata = {
-      lastUpdated: data.lastUpdated,
-      metadata: data.metadata
-    };
-    await fs.writeFile(METADATA_FILE, JSON.stringify(metadata, null, 2));
+    // Write files in parallel with optimized JSON formatting
+    await Promise.all([
+      fs.writeFile(VEHICLES_FILE, JSON.stringify(data.vehicles)), // Remove pretty formatting for smaller file size
+      fs.writeFile(METADATA_FILE, JSON.stringify({
+        lastUpdated: data.lastUpdated,
+        metadata: data.metadata
+      }, null, 2))
+    ]);
     
-    console.log(`💾 Saved ${data.vehicles.length} vehicles to JSON file`);
+    const writeTime = Date.now() - startTime;
+    console.log(`💾 Saved ${data.vehicles.length} vehicles to JSON file in ${writeTime}ms`);
+    
+    // Invalidate cache
+    dataCache = null;
+    
     return true;
   } catch (error) {
     console.error('Error writing vehicle data:', error);
@@ -117,13 +148,19 @@ export const clearAllVehicleData = async (): Promise<boolean> => {
     await ensureDataDir();
     
     // Write empty data
-    await fs.writeFile(VEHICLES_FILE, JSON.stringify([], null, 2));
-    await fs.writeFile(METADATA_FILE, JSON.stringify({
-      lastUpdated: new Date().toISOString(),
-      metadata: {}
-    }, null, 2));
+    await Promise.all([
+      fs.writeFile(VEHICLES_FILE, JSON.stringify([])),
+      fs.writeFile(METADATA_FILE, JSON.stringify({
+        lastUpdated: new Date().toISOString(),
+        metadata: {}
+      }, null, 2))
+    ]);
     
     console.log('🗑️ All vehicle data cleared successfully');
+    
+    // Invalidate cache
+    dataCache = null;
+    
     return true;
   } catch (error) {
     console.error('Error clearing vehicle data:', error);
@@ -211,23 +248,33 @@ export const getDataStats = async () => {
   }
 };
 
-// Check if we need to fetch data (data is empty or old)
+// Check if data needs to be fetched
 export const needsDataFetch = async (): Promise<boolean> => {
   try {
     const data = await readVehicleData();
-    if (!data || data.vehicles.length === 0) {
-      return true;
+    if (!data || !data.vehicles || data.vehicles.length === 0) {
+      return true; // No data, need to fetch
     }
     
-    const ageInHours = await getDataAge();
-    return ageInHours === null || ageInHours > 1; // Fetch if older than 1 hour
+    const dataAge = await getDataAge();
+    if (dataAge === null || dataAge >= 24) {
+      return true; // Data is stale or can't determine age
+    }
+    
+    return false; // Data is fresh
   } catch (error) {
-    console.error('Error checking if data fetch is needed:', error);
-    return true;
+    console.error('Error checking if data needs fetch:', error);
+    return true; // Error occurred, assume we need to fetch
   }
 };
 
-// Type definitions
+// Clear cache (useful for testing)
+export const clearCache = () => {
+  dataCache = null;
+  cacheTimestamp = 0;
+  console.log('🧹 Cache cleared');
+};
+
 export type VehicleData = {
   vehicleName: string;
   resellerName: string;

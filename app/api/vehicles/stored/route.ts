@@ -4,14 +4,9 @@ import { readVehicleData } from '@/Utils/dataStorage';
 export async function GET(request: NextRequest) {
   try {
     const startTime = Date.now();
-    const { searchParams } = new URL(request.url);
     
-    // Get pagination parameters
-    const page = parseInt(searchParams.get('page') || '1');
-    const pageSize = parseInt(searchParams.get('pageSize') || '10000'); // Default to 10k per page
-    
-    // Load from JSON file
-    console.log('🔄 Loading data from JSON file...');
+    // Load all data from JSON file
+    console.log('🔄 Loading all data from JSON file...');
     const data = await readVehicleData();
     
     if (!data) {
@@ -20,7 +15,7 @@ export async function GET(request: NextRequest) {
         data: [],
         pagination: {
           page: 1,
-          pageSize: 10000,
+          pageSize: 0,
           total: 0,
           totalPages: 1,
           hasMore: false
@@ -32,23 +27,18 @@ export async function GET(request: NextRequest) {
       });
     }
     
-    // Apply pagination
-    const startIndex = (page - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-    const paginatedVehicles = data.vehicles.slice(startIndex, endIndex);
-    
     const loadTime = Date.now() - startTime;
-    console.log(`⚡ API loaded ${paginatedVehicles.length}/${data.vehicles.length} vehicles (page ${page}) from JSON file in ${loadTime}ms`);
+    console.log(`⚡ API loaded all ${data.vehicles.length} vehicles from JSON file in ${loadTime}ms`);
     
     const responseData = {
       success: true,
-      data: paginatedVehicles,
+      data: data.vehicles, // Return all vehicles
       pagination: {
-        page,
-        pageSize,
+        page: 1,
+        pageSize: data.vehicles.length,
         total: data.vehicles.length,
-        totalPages: Math.ceil(data.vehicles.length / pageSize),
-        hasMore: (page * pageSize) < data.vehicles.length
+        totalPages: 1,
+        hasMore: false
       },
       metadata: {
         lastUpdated: data.lastUpdated,
@@ -75,7 +65,7 @@ export async function GET(request: NextRequest) {
       data: [],
       pagination: {
         page: 1,
-        pageSize: 10000,
+        pageSize: 0,
         total: 0,
         totalPages: 1,
         hasMore: false

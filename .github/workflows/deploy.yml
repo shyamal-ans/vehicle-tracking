@@ -40,7 +40,7 @@ jobs:
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
           username: ${{ secrets.HOSTINGER_USER }}
-          password: ${{ secrets.HOSTINGER_PASSWORD }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
           script: |
             # Install PM2 globally if not installed
             if ! command -v pm2 &> /dev/null; then
@@ -79,7 +79,7 @@ jobs:
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
           username: ${{ secrets.HOSTINGER_USER }}
-          password: ${{ secrets.HOSTINGER_PASSWORD }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
           script: |
             # Wait a moment for the app to start
             sleep 15

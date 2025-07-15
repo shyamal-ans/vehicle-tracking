@@ -86,49 +86,32 @@ const VehicleTrackingDashboard = () => {
   const [isLoadingStored, setIsLoadingStored] = useState(true);
   const [storedError, setStoredError] = useState<any>(null);
 
-  // Fetch all data in chunks
+  // Fetch all data at once
   useEffect(() => {
     const fetchAllData = async () => {
       try {
         setIsLoadingStored(true);
         const startTime = Date.now();
         
-        let allVehicles: Vehicle[] = [];
-        let page = 1;
-        const pageSize = 10000; // 10k vehicles per request
+        const response = await fetch('/api/vehicles/stored');
+        const data = await response.json();
         
-        while (true) {
-          const response = await fetch(`/api/vehicles/stored?page=${page}&pageSize=${pageSize}`);
-          const data = await response.json();
-          
-          if (!data.success) {
-            throw new Error('Failed to fetch data');
-          }
-          
-          // Add unique IDs to prevent duplicate key errors
-          const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
-            ...vehicle,
-            uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${page}-${index}`
-          }));
-          
-          allVehicles = [...allVehicles, ...vehiclesWithIds];
-          
-          console.log(`📄 Loaded page ${page}: ${data.data.length} vehicles (${allVehicles.length} total)`);
-          
-          // Check if we have more pages
-          if (!data.pagination.hasMore) {
-            break;
-          }
-          
-          page++;
+        if (!data.success) {
+          throw new Error('Failed to fetch data');
         }
         
+        // Add unique IDs to prevent duplicate key errors
+        const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
+          ...vehicle,
+          uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${index}`
+        }));
+        
         const totalTime = Date.now() - startTime;
-        console.log(`⚡ Frontend loaded all ${allVehicles.length} vehicles in ${totalTime}ms`);
+        console.log(`⚡ Frontend loaded all ${vehiclesWithIds.length} vehicles in ${totalTime}ms`);
         
         setStoredData({ 
           success: true, 
-          data: allVehicles,
+          data: vehiclesWithIds,
           loadTime: `${totalTime}ms`
         });
         
@@ -148,38 +131,24 @@ const VehicleTrackingDashboard = () => {
       setIsLoadingStored(true);
       const startTime = Date.now();
       
-      let allVehicles: Vehicle[] = [];
-      let page = 1;
-      const pageSize = 10000;
+      const response = await fetch('/api/vehicles/stored');
+      const data = await response.json();
       
-      while (true) {
-        const response = await fetch(`/api/vehicles/stored?page=${page}&pageSize=${pageSize}`);
-        const data = await response.json();
-        
-        if (!data.success) {
-          throw new Error('Failed to fetch data');
-        }
-        
-        const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
-          ...vehicle,
-          uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${page}-${index}`
-        }));
-        
-        allVehicles = [...allVehicles, ...vehiclesWithIds];
-        
-        if (!data.pagination.hasMore) {
-          break;
-        }
-        
-        page++;
+      if (!data.success) {
+        throw new Error('Failed to fetch data');
       }
       
+      const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
+        ...vehicle,
+        uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${index}`
+      }));
+      
       const totalTime = Date.now() - startTime;
-      console.log(`🔄 Refetched ${allVehicles.length} vehicles in ${totalTime}ms`);
+      console.log(`🔄 Refetched ${vehiclesWithIds.length} vehicles in ${totalTime}ms`);
       
       setStoredData({ 
         success: true, 
-        data: allVehicles,
+        data: vehiclesWithIds,
         loadTime: `${totalTime}ms`
       });
     } catch (error) {
