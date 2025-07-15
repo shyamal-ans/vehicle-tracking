@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     console.log('🔄 Manual refresh requested - clearing cache and fetching fresh data...');
     
     // Clear existing data first
-    const cleared = clearAllVehicleData();
+    const cleared = await clearAllVehicleData();
     if (cleared) {
       console.log('🗑️ Existing data cleared');
     }
@@ -135,14 +135,14 @@ export async function POST(request: NextRequest) {
     };
 
     // Store new data
-    const success = appendVehicleData(vehicles, metadata);
+    const success = await appendVehicleData(vehicles, metadata);
     
     if (!success) {
       throw new Error('Failed to store vehicle data');
     }
 
     // Clean old data (keep last 30 days)
-    const cleaned = cleanOldData(30);
+    const cleaned = await cleanOldData(30);
     if (cleaned) {
       console.log('🧹 Old data cleaned successfully');
     }
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get updated data for response
-    const updatedData = readVehicleData();
+    const updatedData = await readVehicleData();
     
     console.log(`✅ Manual refresh completed successfully`);
     console.log(`📁 Total vehicles stored: ${updatedData?.totalRecords || 0}`);
