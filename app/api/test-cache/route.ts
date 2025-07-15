@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getDataStats, clearAllVehicleData, readVehicleData, needsDataFetch, getDataAge } from '@/Utils/dataStorage';
-import { getCacheInfo } from '@/Utils/cache';
+import { getCacheInfo } from '@/Utils/redis';
 
 export async function GET() {
   try {
-    const dataStats = getDataStats();
-    const cacheInfo = getCacheInfo();
-    const vehicleData = readVehicleData();
-    const needsFetch = needsDataFetch();
-    const dataAge = getDataAge();
+    const dataStats = await getDataStats();
+    const cacheInfo = await getCacheInfo();
+    const vehicleData = await readVehicleData();
+    const needsFetch = await needsDataFetch();
+    const dataAge = await getDataAge();
     
     return NextResponse.json({
       success: true,
@@ -33,7 +33,7 @@ export async function GET() {
 
 export async function DELETE() {
   try {
-    const success = clearAllVehicleData();
+    const success = await clearAllVehicleData();
     
     return NextResponse.json({
       success,

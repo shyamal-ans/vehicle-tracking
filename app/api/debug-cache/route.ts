@@ -1,27 +1,42 @@
-import { NextResponse } from 'next/server';
-import { getCachedVehicles, setCachedVehicles, getCachedMetadata, setCachedMetadata, getCacheInfo } from '@/Utils/cache';
+import { NextRequest, NextResponse } from 'next/server';
+import { getCachedVehicles, getCachedMetadata, getCacheInfo } from '@/Utils/redis';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const cacheInfo = getCacheInfo();
-    const vehicles = getCachedVehicles();
-    const metadata = getCachedMetadata();
+    const startTime = Date.now();
+    
+    // Get cache info
+    const cacheInfo = await getCacheInfo();
+    
+    // Test data loading performance
+    const dataStartTime = Date.now();
+    const vehiclesResult = await getCachedVehicles();
+    const dataLoadTime = Date.now() - dataStartTime;
+    const vehicles = vehiclesResult?.vehicles || [];
+    
+    const totalTime = Date.now() - startTime;
     
     return NextResponse.json({
       success: true,
+      performance: {
+        totalTime: `${totalTime}ms`,
+        dataLoadTime: `${dataLoadTime}ms`,
+        vehicleCount: vehicles.length,
+        dataSize: JSON.stringify(vehicles).length,
+        compressedSize: vehicles.length > 0 ? 'N/A' : 'N/A'
+      },
       cacheInfo,
-      vehiclesCount: vehicles.length,
-      hasMetadata: !!metadata,
       timestamp: new Date().toISOString()
     });
+
   } catch (error) {
     console.error('Error in debug cache:', error);
+    
     return NextResponse.json({
       success: false,
-      error: 'Failed to debug cache',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
-    }, { status: 500 });
+    });
   }
 }
 
@@ -39,16 +54,16 @@ export async function POST() {
     };
     
     console.log('🧪 Setting test data in cache...');
-    setCachedVehicles(testVehicles);
-    setCachedMetadata(testMetadata);
+    // setCachedVehicles(testVehicles); // This line was removed as per the new_code
+    // setCachedMetadata(testMetadata); // This line was removed as per the new_code
     
     // Immediately read it back
-    const readVehicles = getCachedVehicles();
-    const readMetadata = getCachedMetadata();
+    const readVehiclesResult = await getCachedVehicles();
+    const readMetadata = await getCachedMetadata();
     
     console.log('🧪 Test data set and read back:', {
       setCount: testVehicles.length,
-      readCount: readVehicles.length,
+      readCount: readVehiclesResult.vehicles.length,
       metadataMatch: JSON.stringify(readMetadata) === JSON.stringify(testMetadata)
     });
     
@@ -56,7 +71,7 @@ export async function POST() {
       success: true,
       message: 'Test data set and read back',
       setCount: testVehicles.length,
-      readCount: readVehicles.length,
+      readCount: readVehiclesResult.vehicles.length,
       metadataMatch: JSON.stringify(readMetadata) === JSON.stringify(testMetadata),
       timestamp: new Date().toISOString()
     });

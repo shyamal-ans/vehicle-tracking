@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCachedFilterOptions, clearFilterOptionsCache } from '@/Utils/cache';
+import { getCachedFilterOptions, clearFilterOptionsCache } from '@/Utils/redis';
 import { readVehicleData } from '@/Utils/dataStorage';
 
 export async function GET() {

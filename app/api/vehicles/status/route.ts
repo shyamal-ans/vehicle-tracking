@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { readVehicleData, needsDataFetch, getDataAge, getDataStats } from '@/Utils/dataStorage';
-import { getCacheInfo } from '@/Utils/cache';
+import { getCacheInfo } from '@/Utils/redis';
 
 export async function GET() {
   try {
-    const vehicleData = readVehicleData();
-    const needsFetch = needsDataFetch();
-    const dataAge = getDataAge();
-    const dataStats = getDataStats();
-    const cacheInfo = getCacheInfo();
+    const vehicleData = await readVehicleData();
+    const needsFetch = await needsDataFetch();
+    const dataAge = await getDataAge();
+    const dataStats = await getDataStats();
+    const cacheInfo = await getCacheInfo();
     
     // Determine status
     let status = 'unknown';
