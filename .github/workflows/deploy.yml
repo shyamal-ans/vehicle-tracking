@@ -40,8 +40,14 @@ jobs:
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
           username: ${{ secrets.HOSTINGER_USER }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          password: ${{ secrets.HOSTINGER_PASSWORD }}
           script: |
+            # Install PM2 globally if not installed
+            if ! command -v pm2 &> /dev/null; then
+              echo "📦 Installing PM2..."
+              npm install -g pm2
+            fi
+            
             cd /var/www/nextjs-app
             
             # Install production dependencies
@@ -54,12 +60,14 @@ jobs:
             chmod 755 data
             chmod 644 data/*.json 2>/dev/null || true
             
-            # Restart the application
+            # Stop existing PM2 process if running
             if pm2 list | grep -q "nextjs-app"; then
-              pm2 restart nextjs-app
-            else
-              pm2 start npm --name "nextjs-app" -- start
+              pm2 stop nextjs-app
+              pm2 delete nextjs-app
             fi
+            
+            # Start the application with PM2
+            pm2 start npm --name "nextjs-app" -- start
             
             # Save PM2 configuration
             pm2 save
@@ -71,19 +79,30 @@ jobs:
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
           username: ${{ secrets.HOSTINGER_USER }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          password: ${{ secrets.HOSTINGER_PASSWORD }}
           script: |
             # Wait a moment for the app to start
-            sleep 10
+            sleep 15
             
-            # Check if the app is running
-            if pm2 list | grep -q "nextjs-app.*online"; then
-              echo "✅ Application is running successfully!"
-              
-              # Test the API endpoint
-              curl -f http://localhost:3000/api/vehicles/status || echo "⚠️ API endpoint not responding yet"
+            # Check if PM2 is available
+            if ! command -v pm2 &> /dev/null; then
+              echo "❌ PM2 not found - checking if app is running on port 3000"
+              if curl -f http://localhost:3000/api/vehicles/status > /dev/null 2>&1; then
+                echo "✅ Application is running on port 3000"
+              else
+                echo "❌ Application not responding on port 3000"
+                exit 1
+              fi
             else
-              echo "❌ Application failed to start"
-              pm2 logs nextjs-app --lines 20
-              exit 1
+              # Check if the app is running with PM2
+              if pm2 list | grep -q "nextjs-app.*online"; then
+                echo "✅ Application is running successfully with PM2!"
+                
+                # Test the API endpoint
+                curl -f http://localhost:3000/api/vehicles/status || echo "⚠️ API endpoint not responding yet"
+              else
+                echo "❌ Application failed to start with PM2"
+                pm2 logs nextjs-app --lines 20
+                exit 1
+              fi
             fi
