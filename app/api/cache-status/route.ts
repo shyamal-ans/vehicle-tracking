@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCacheInfo, hasCachedData } from '@/Utils/cache';
+import { getCacheInfo, hasCachedData } from '@/Utils/redis';
 
 export async function GET() {
   try {

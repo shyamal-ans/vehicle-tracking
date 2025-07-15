@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     console.log('🔄 Cron job triggered - checking data freshness...');
     
     // Get current data age for logging
-    const dataAge = getDataAge();
+    const dataAge = await getDataAge();
     console.log(`📊 Current data age: ${dataAge?.toFixed(1)} hours`);
     
     // Check if data is fresh (less than 1 hour old)
@@ -147,14 +147,14 @@ export async function POST(request: NextRequest) {
     };
 
     // Store new data (will replace if same date range)
-    const success = appendVehicleData(vehicles, metadata);
+    const success = await appendVehicleData(vehicles, metadata);
     
     if (!success) {
       throw new Error('Failed to store vehicle data');
     }
 
     // Clean old data (keep last 30 days)
-    const cleaned = cleanOldData(30);
+    const cleaned = await cleanOldData(30);
     if (cleaned) {
       console.log('🧹 Old data cleaned successfully');
     }
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get updated data for response
-    const updatedData = readVehicleData();
+    const updatedData = await readVehicleData();
     
     console.log(`✅ Cron job completed successfully`);
     console.log(`📁 Total vehicles stored: ${updatedData?.totalRecords || 0}`);

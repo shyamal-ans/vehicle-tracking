@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { getCachedFilterOptions, clearFilterOptionsCache } from '@/Utils/cache';
+import { getCachedFilterOptions, clearFilterOptionsCache } from '@/Utils/redis';
 import { readVehicleData } from '@/Utils/dataStorage';
 
 export async function GET() {
   try {
-    const cachedOptions = getCachedFilterOptions();
-    const data = readVehicleData();
+    const cachedOptions = await getCachedFilterOptions();
+    const data = await readVehicleData();
     
     // Sample some project names from the data
     const sampleProjects = data?.vehicles?.slice(0, 5).map((v: any) => ({
@@ -18,7 +18,7 @@ export async function GET() {
       cachedOptions,
       hasCachedOptions: !!cachedOptions,
       sampleProjects,
-      totalVehicles: data?.vehicles?.length || 0,
+      totalVehicles: data?.total || 0,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -35,7 +35,7 @@ export async function GET() {
 export async function POST() {
   try {
     console.log('🧹 Clearing filter options cache...');
-    clearFilterOptionsCache();
+    await clearFilterOptionsCache();
     
     return NextResponse.json({
       success: true,

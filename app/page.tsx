@@ -1,6 +1,5 @@
 "use client";
 
-import { useGetStoredVehiclesQuery, useGetFilterOptionsQuery, useTriggerVehicleFetchMutation } from "@/slices/smartVehicleSlice";
 import React, { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { formatDateTime } from "@/Utils/Utils";
@@ -26,6 +25,7 @@ type Vehicle = {
   fetchedAt?: string;
   startDate?: string;
   endDate?: string;
+  uniqueId?: string;
 };
 
 // 1. Change the default pageSize from 100 to 1000
@@ -33,7 +33,6 @@ const pageSize = 1000;
 
 const VehicleTrackingDashboard = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [allVehiclesCache, setAllVehiclesCache] = useState<Vehicle[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
@@ -82,23 +81,113 @@ const VehicleTrackingDashboard = () => {
     return sorted;
   }, [vehicles, sortConfig]);
 
-  // Query for stored vehicle data with pagination and filters (without search)
-  const { 
-    data: storedData, 
-    isLoading: isLoadingStored, 
-    error: storedError,
-    refetch: refetchStored
-  } = useGetStoredVehiclesQuery({
-    search: "", // Remove search from API call
-    page: currentPage,
-    pageSize,
-    server: filters.server,
-    status: filters.status,
-    platform: filters.platform,
-    company: filters.company,
-    region: filters.region,
-    project: filters.project,
-  });
+  // Manual data fetching - no Redux queries
+  const [storedData, setStoredData] = useState<any>(null);
+  const [isLoadingStored, setIsLoadingStored] = useState(true);
+  const [storedError, setStoredError] = useState<any>(null);
+
+  // Fetch all data in chunks
+  useEffect(() => {
+    const fetchAllData = async () => {
+      try {
+        setIsLoadingStored(true);
+        const startTime = Date.now();
+        
+        let allVehicles: Vehicle[] = [];
+        let page = 1;
+        const pageSize = 10000; // 10k vehicles per request
+        
+        while (true) {
+          const response = await fetch(`/api/vehicles/stored?page=${page}&pageSize=${pageSize}`);
+          const data = await response.json();
+          
+          if (!data.success) {
+            throw new Error('Failed to fetch data');
+          }
+          
+          // Add unique IDs to prevent duplicate key errors
+          const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
+            ...vehicle,
+            uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${page}-${index}`
+          }));
+          
+          allVehicles = [...allVehicles, ...vehiclesWithIds];
+          
+          console.log(`📄 Loaded page ${page}: ${data.data.length} vehicles (${allVehicles.length} total)`);
+          
+          // Check if we have more pages
+          if (!data.pagination.hasMore) {
+            break;
+          }
+          
+          page++;
+        }
+        
+        const totalTime = Date.now() - startTime;
+        console.log(`⚡ Frontend loaded all ${allVehicles.length} vehicles in ${totalTime}ms`);
+        
+        setStoredData({ 
+          success: true, 
+          data: allVehicles,
+          loadTime: `${totalTime}ms`
+        });
+        
+      } catch (error) {
+        setStoredError(error);
+      } finally {
+        setIsLoadingStored(false);
+      }
+    };
+
+    fetchAllData();
+  }, []);
+
+  // Manual refetch function
+  const refetchStored = async () => {
+    try {
+      setIsLoadingStored(true);
+      const startTime = Date.now();
+      
+      let allVehicles: Vehicle[] = [];
+      let page = 1;
+      const pageSize = 10000;
+      
+      while (true) {
+        const response = await fetch(`/api/vehicles/stored?page=${page}&pageSize=${pageSize}`);
+        const data = await response.json();
+        
+        if (!data.success) {
+          throw new Error('Failed to fetch data');
+        }
+        
+        const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
+          ...vehicle,
+          uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${page}-${index}`
+        }));
+        
+        allVehicles = [...allVehicles, ...vehiclesWithIds];
+        
+        if (!data.pagination.hasMore) {
+          break;
+        }
+        
+        page++;
+      }
+      
+      const totalTime = Date.now() - startTime;
+      console.log(`🔄 Refetched ${allVehicles.length} vehicles in ${totalTime}ms`);
+      
+      setStoredData({ 
+        success: true, 
+        data: allVehicles,
+        loadTime: `${totalTime}ms`
+      });
+    } catch (error) {
+      setStoredError(error);
+    } finally {
+      setIsLoadingStored(false);
+    }
+  };
 
   // Debounce search query
   useEffect(() => {
@@ -116,98 +205,196 @@ const VehicleTrackingDashboard = () => {
     console.log('🔍 Current filters:', filters);
   }, [searchQuery, debouncedSearchQuery, filters]);
 
-  // Query for filter options
-  const { data: filterOptions } = useGetFilterOptionsQuery();
+  // Compute filter options from stored data
+  const [filterOptions, setFilterOptions] = useState<any>(null);
+  const [isFetching, setIsFetching] = useState(false);
 
-  // Mutation to trigger manual data fetch
-  const [triggerFetch, { isLoading: isFetching }] = useTriggerVehicleFetchMutation();
+  // Compute filter options when data changes - optimized with useMemo
+  const computedFilterOptions = React.useMemo(() => {
+    if (!storedData?.data || storedData.data.length === 0) {
+      return null;
+    }
+
+    const vehicles = storedData.data;
+    
+    // Extract unique values for each filter
+    const servers = Array.from(new Set(vehicles.map((v: Vehicle) => v.ip))).sort();
+    const companies = Array.from(new Set(vehicles.map((v: Vehicle) => v.companyName))).sort();
+    const platforms = Array.from(new Set(vehicles.map((v: Vehicle) => v.projectName))).sort();
+    const regions = Array.from(new Set(vehicles.map((v: Vehicle) => v.region))).sort();
+    const projects = Array.from(new Set(vehicles.map((v: Vehicle) => v.projectName))).sort();
+
+    const options = {
+      success: true,
+      data: {
+        servers,
+        companies,
+        platforms,
+        regions,
+        projects
+      },
+      timestamp: new Date().toISOString(),
+      source: 'computed'
+    };
+
+    console.log('🔧 Filter options computed from data:', {
+      servers: servers.length,
+      companies: companies.length,
+      platforms: platforms.length,
+      regions: regions.length,
+      projects: projects.length
+    });
+
+    return options;
+  }, [storedData]);
+
+  // Update filter options state
+  useEffect(() => {
+    setFilterOptions(computedFilterOptions);
+  }, [computedFilterOptions]);
+
+  // Manual trigger fetch function
+  const triggerFetch = async () => {
+    try {
+      setIsFetching(true);
+      const response = await fetch('/api/cron/fetch-vehicles', { method: 'POST' });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('✅ Manual fetch completed:', result);
+      
+      // Invalidate Vercel Edge Cache
+      try {
+        await fetch('/api/vehicles/stored', { method: 'POST' });
+        console.log('🔄 Vercel Edge Cache invalidated');
+      } catch (cacheError) {
+        console.warn('⚠️ Failed to invalidate cache:', cacheError);
+      }
+      
+      // Refetch the main data after manual fetch
+      await refetchStored();
+    } catch (error) {
+      console.error('❌ Manual fetch failed:', error);
+      // Don't throw the error, just log it
+    } finally {
+      setIsFetching(false);
+    }
+  };
 
   // Auto-fetch data if no data is present
   useEffect(() => {
     if (!hasAutoFetched && !isLoadingStored && storedData && storedData.data.length === 0) {
       console.log('📁 No vehicle data found. Auto-fetching...');
       setHasAutoFetched(true);
-      triggerFetch().unwrap()
-        .then((result) => {
-          console.log('✅ Auto-fetch completed successfully:', result);
-          refetchStored();
+      
+      // Try to trigger fetch, but don't fail if it doesn't work
+      triggerFetch()
+        .then(() => {
+          console.log('✅ Auto-fetch completed successfully');
         })
-        .catch((error) => {
-          console.error('❌ Auto-fetch failed:', error);
-          // Don't show error to user, just log it
+        .catch((error: any) => {
+          console.warn('⚠️ Auto-fetch failed (this is normal if no cron endpoint exists):', error);
+          // Don't show error to user, this is expected behavior
         });
     }
   }, [storedData, isLoadingStored, hasAutoFetched, triggerFetch, refetchStored]);
 
-  // Update local vehicle data when stored data changes (only when not searching)
-  useEffect(() => {
-    if (storedData?.data && !debouncedSearchQuery) {
-      setVehicles(storedData.data);
-      setTotalVehicles(storedData.pagination?.total || 0);
-      setTotalPages(storedData.pagination?.totalPages || 1);
-      
-      // Do NOT reset selections here!
-      // setSelectedVehicles(new Set());
-      
-      // Update cache with fresh data if no filters are applied
-      if (Object.values(filters).every(filter => !filter) && !searchQuery) {
-        // Update cache with fresh data instead of clearing it
-        setAllVehiclesCache(storedData.data);
-        localStorage.setItem('vehicleCache', JSON.stringify(storedData.data));
-        localStorage.setItem('vehicleCacheTimestamp', Date.now().toString());
-        console.log('🔄 Cache updated with fresh data:', storedData.data.length, 'vehicles');
-      }
-    }
-  }, [storedData, filters, debouncedSearchQuery, searchQuery]);
+  // Store all data and apply client-side filtering
+  const [allVehicles, setAllVehicles] = useState<Vehicle[]>([]);
 
-  // Search in cache when available
+  // Update all vehicles when data changes
   useEffect(() => {
-    if (allVehiclesCache.length > 0 && debouncedSearchQuery) {
-      console.log('🔍 Searching in cache:', debouncedSearchQuery);
+    if (storedData?.data) {
+      setAllVehicles(storedData.data);
+      console.log('🔄 All data loaded:', storedData.data.length, 'vehicles');
+    }
+  }, [storedData]);
+
+  // Client-side filtering and pagination - optimized with useMemo
+  const filteredAndPaginatedData = React.useMemo(() => {
+    if (allVehicles.length === 0) {
+      return { vehicles: [], total: 0, totalPages: 1 };
+    }
+
+    let filteredData = [...allVehicles];
+    
+    // Apply search filter
+    if (debouncedSearchQuery) {
       const searchLower = debouncedSearchQuery.toLowerCase();
-      const filteredData = allVehiclesCache.filter(vehicle =>
+      filteredData = filteredData.filter(vehicle =>
         Object.values(vehicle).some((val) =>
           String(val).toLowerCase().includes(searchLower)
         )
       );
-      
-      // Apply pagination to search results
-      const startIndex = (currentPage - 1) * pageSize;
-      const endIndex = startIndex + pageSize;
-      const paginatedData = filteredData.slice(startIndex, endIndex);
-      
-      setVehicles(paginatedData);
-      setTotalVehicles(filteredData.length);
-      setTotalPages(Math.ceil(filteredData.length / pageSize));
-      console.log('🔍 Search results:', filteredData.length, 'vehicles found, showing page', currentPage);
-    } else if (allVehiclesCache.length > 0 && !debouncedSearchQuery) {
-      // No search query - show normal paginated data from API
-      if (storedData?.data) {
-        setVehicles(storedData.data);
-        setTotalVehicles(storedData.pagination?.total || 0);
-        setTotalPages(storedData.pagination?.totalPages || 1);
+    }
+    
+    // Apply server filter (IP)
+    if (filters.server) {
+      filteredData = filteredData.filter(vehicle =>
+        vehicle.ip.toLowerCase().includes(filters.server.toLowerCase())
+      );
+    }
+    
+    // Apply status filter (InActiveDays)
+    if (filters.status) {
+      if (filters.status === "Active") {
+        filteredData = filteredData.filter(vehicle => vehicle.InActiveDays === 0);
+      } else if (filters.status === "Inactive") {
+        filteredData = filteredData.filter(vehicle => vehicle.InActiveDays > 0);
       }
     }
-  }, [debouncedSearchQuery, allVehiclesCache, pageSize, currentPage, storedData]);
+    
+    // Apply platform filter (projectName)
+    if (filters.platform) {
+      filteredData = filteredData.filter(vehicle =>
+        vehicle.projectName.toLowerCase().includes(filters.platform.toLowerCase())
+      );
+    }
+    
+    // Apply company filter
+    if (filters.company) {
+      filteredData = filteredData.filter(vehicle =>
+        vehicle.companyName.toLowerCase().includes(filters.company.toLowerCase())
+      );
+    }
+    
+    // Apply region filter
+    if (filters.region) {
+      filteredData = filteredData.filter(vehicle =>
+        vehicle.region.toLowerCase().includes(filters.region.toLowerCase())
+      );
+    }
+    
+    // Apply project filter (projectName)
+    if (filters.project) {
+      filteredData = filteredData.filter(vehicle =>
+        vehicle.projectName.toLowerCase().includes(filters.project.toLowerCase())
+      );
+    }
+    
+    // Apply pagination
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedData = filteredData.slice(startIndex, endIndex);
+    
+    return {
+      vehicles: paginatedData,
+      total: filteredData.length,
+      totalPages: Math.ceil(filteredData.length / pageSize)
+    };
+  }, [debouncedSearchQuery, filters, allVehicles, currentPage, pageSize]);
 
-  // Function to populate cache with all vehicle data
-  const populateCache = async () => {
-    if (allVehiclesCache.length === 0) {
-      try {
-        const response = await fetch('/api/vehicles/stored?pageSize=999999&page=1');
-        const data = await response.json();
-        if (data.success) {
-          setAllVehiclesCache(data.data);
-          // Save to localStorage for persistence
-          localStorage.setItem('vehicleCache', JSON.stringify(data.data));
-          localStorage.setItem('vehicleCacheTimestamp', Date.now().toString());
-          console.log('📦 Cache populated and saved to localStorage:', data.data.length, 'vehicles');
-        }
-      } catch (error) {
-        console.error('Error populating cache:', error);
-      }
-    }
-  };
+  // Update state when filtered data changes
+  useEffect(() => {
+    setVehicles(filteredAndPaginatedData.vehicles);
+    setTotalVehicles(filteredAndPaginatedData.total);
+    setTotalPages(filteredAndPaginatedData.totalPages);
+    
+    console.log('🔍 Filter results:', filteredAndPaginatedData.total, 'vehicles, page', currentPage);
+  }, [filteredAndPaginatedData, currentPage]);
 
   // Reset to page 1 when search or filters change
   useEffect(() => {
@@ -222,114 +409,94 @@ const VehicleTrackingDashboard = () => {
     }));
   };
 
-  // Export selected vehicles to Excel
+  // Export filtered vehicles to Excel (client-side)
   const exportSelectedVehicles = async () => {
-    // If nothing is selected, treat as 'export all filtered'
-    const isExportAllFiltered = true; // Always true now
-
     try {
-      // If no filters and export all, use cache
-      const isExportingAll = Object.values(filters).every(filter => !filter) && !searchQuery && (isExportAllFiltered || totalVehicles > 0);
-      if (isExportingAll) {
-        if (allVehiclesCache.length === 0) {
-          await populateCache();
+      // Get the currently filtered data (same logic as display)
+      let filteredData = [...allVehicles];
+      
+      // Apply search filter
+      if (debouncedSearchQuery) {
+        const searchLower = debouncedSearchQuery.toLowerCase();
+        filteredData = filteredData.filter(vehicle =>
+          Object.values(vehicle).some((val) =>
+            String(val).toLowerCase().includes(searchLower)
+          )
+        );
+      }
+      
+      // Apply all other filters
+      if (filters.server) {
+        filteredData = filteredData.filter(vehicle =>
+          vehicle.ip.toLowerCase().includes(filters.server.toLowerCase())
+        );
+      }
+      
+      if (filters.status) {
+        if (filters.status === "Active") {
+          filteredData = filteredData.filter(vehicle => vehicle.InActiveDays === 0);
+        } else if (filters.status === "Inactive") {
+          filteredData = filteredData.filter(vehicle => vehicle.InActiveDays > 0);
         }
-        const allVehicles = allVehiclesCache;
-          const exportData = allVehicles.map((v: Vehicle) => ({
-            "Vehicle Name": v.vehicleName,
-            Reseller: v.resellerName,
-            IP: v.ip,
-            Company: v.companyName,
-            Branch: v.branchName,
-            "Inactive Days": v.InActiveDays,
-            Admin: v.adminName,
-            "Vehicle No": v.vehicleNo,
-            "Created Date": v.createdDate,
-            IMEI: v.imeiNo,
-            Project: v.projectName,
-            Region: v.region,
-            "Project ID": v.projectId,
-            "SIM No": v.simNo,
-            Username: v.username,
-            "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
-            "Start Date": v.startDate || "-",
-            "End Date": v.endDate || "-",
-          }));
-
-          const worksheet = XLSX.utils.json_to_sheet(exportData);
-          const workbook = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(workbook, worksheet, "All Vehicles");
-          XLSX.writeFile(workbook, "all_vehicles.xlsx");
-        return;
+      }
+      
+      if (filters.platform) {
+        filteredData = filteredData.filter(vehicle =>
+          vehicle.projectName.toLowerCase().includes(filters.platform.toLowerCase())
+        );
+      }
+      
+      if (filters.company) {
+        filteredData = filteredData.filter(vehicle =>
+          vehicle.companyName.toLowerCase().includes(filters.company.toLowerCase())
+        );
+      }
+      
+      if (filters.region) {
+        filteredData = filteredData.filter(vehicle =>
+          vehicle.region.toLowerCase().includes(filters.region.toLowerCase())
+        );
+      }
+      
+      if (filters.project) {
+        filteredData = filteredData.filter(vehicle =>
+          vehicle.projectName.toLowerCase().includes(filters.project.toLowerCase())
+        );
       }
 
-      // If filters applied, fetch all filtered vehicles
-      const filterParams = new URLSearchParams({
-        pageSize: '999999',
-        page: '1',
-        ...(filters.server && { server: filters.server }),
-        ...(filters.status && { status: filters.status }),
-        ...(filters.platform && { platform: filters.platform }),
-        ...(filters.company && { company: filters.company }),
-        ...(filters.region && { region: filters.region }),
-        ...(filters.project && { project: filters.project }),
-        ...(searchQuery && { search: searchQuery }),
-      });
-      const response = await fetch(`/api/vehicles/stored?${filterParams}`);
-      const data = await response.json();
-      if (data.success) {
-        let exportData;
-        if (isExportAllFiltered) {
-          // Export all filtered vehicles
-          exportData = data.data.map((v: Vehicle) => ({
-            "Vehicle Name": v.vehicleName,
-            Reseller: v.resellerName,
-            IP: v.ip,
-            Company: v.companyName,
-            Branch: v.branchName,
-            "Inactive Days": v.InActiveDays,
-            Admin: v.adminName,
-            "Vehicle No": v.vehicleNo,
-            "Created Date": v.createdDate,
-            IMEI: v.imeiNo,
-            Project: v.projectName,
-            Region: v.region,
-            "Project ID": v.projectId,
-            "SIM No": v.simNo,
-            Username: v.username,
-            "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
-            "Start Date": v.startDate || "-",
-            "End Date": v.endDate || "-",
-          }));
-      } else {
-          // Export only selected vehicles
-          exportData = data.data.map((v: Vehicle) => ({
-            "Vehicle Name": v.vehicleName,
-            Reseller: v.resellerName,
-            IP: v.ip,
-            Company: v.companyName,
-            Branch: v.branchName,
-            "Inactive Days": v.InActiveDays,
-            Admin: v.adminName,
-            "Vehicle No": v.vehicleNo,
-            "Created Date": v.createdDate,
-            IMEI: v.imeiNo,
-            Project: v.projectName,
-            Region: v.region,
-            "Project ID": v.projectId,
-            "SIM No": v.simNo,
-            Username: v.username,
-            "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
-            "Start Date": v.startDate || "-",
-            "End Date": v.endDate || "-",
-          }));
-        }
+      // Create export data
+      const exportData = filteredData.map((v: Vehicle) => ({
+        "Vehicle Name": v.vehicleName,
+        Reseller: v.resellerName,
+        IP: v.ip,
+        Company: v.companyName,
+        Branch: v.branchName,
+        "Inactive Days": v.InActiveDays,
+        Admin: v.adminName,
+        "Vehicle No": v.vehicleNo,
+        "Created Date": v.createdDate,
+        IMEI: v.imeiNo,
+        Project: v.projectName,
+        Region: v.region,
+        "Project ID": v.projectId,
+        "SIM No": v.simNo,
+        Username: v.username,
+        "Fetched At": v.fetchedAt ? formatDateTime(v.fetchedAt) : "-",
+        "Start Date": v.startDate || "-",
+        "End Date": v.endDate || "-",
+      }));
 
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Selected Vehicles");
-        XLSX.writeFile(workbook, "selected_vehicles.xlsx");
-      }
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      
+      // Use appropriate filename based on filters
+      const filename = filtersActive ? "filtered_vehicles.xlsx" : "all_vehicles.xlsx";
+      const sheetName = filtersActive ? "Filtered Vehicles" : "All Vehicles";
+      
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      XLSX.writeFile(workbook, filename);
+      
+      console.log(`📊 Exported ${exportData.length} vehicles to ${filename}`);
     } catch (error) {
       console.error('Error exporting vehicles:', error);
       alert('Error exporting vehicles. Please try again.');
@@ -493,7 +660,7 @@ const VehicleTrackingDashboard = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">All Servers</option>
-                    {filterOptions?.data?.servers?.map(server => (
+                    {filterOptions?.data?.servers?.map((server: string) => (
                       <option key={server} value={server}>{server}</option>
                     ))}
                   </select>
@@ -526,7 +693,7 @@ const VehicleTrackingDashboard = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">All Platforms</option>
-                    {filterOptions?.data?.platforms?.map(platform => (
+                    {filterOptions?.data?.platforms?.map((platform: string) => (
                       <option key={platform} value={platform}>{platform}</option>
                     ))}
                   </select>
@@ -543,7 +710,7 @@ const VehicleTrackingDashboard = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">All Companies</option>
-                    {filterOptions?.data?.companies?.map(company => (
+                    {filterOptions?.data?.companies?.map((company: string) => (
                       <option key={company} value={company}>{company}</option>
                     ))}
                   </select>
@@ -560,7 +727,7 @@ const VehicleTrackingDashboard = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">All Regions</option>
-                    {filterOptions?.data?.regions?.map(region => (
+                    {filterOptions?.data?.regions?.map((region: string) => (
                       <option key={region} value={region}>{region}</option>
                     ))}
                   </select>
@@ -577,7 +744,7 @@ const VehicleTrackingDashboard = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">All Projects</option>
-                    {filterOptions?.data?.projects?.map(project => (
+                    {filterOptions?.data?.projects?.map((project: string) => (
                       <option key={project} value={project}>{project}</option>
                     ))}
                   </select>
@@ -599,7 +766,30 @@ const VehicleTrackingDashboard = () => {
           </div>
         </div>
 
-        {/* Error Display */}
+        {/* Loading and Error Display */}
+        {isLoading && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              <div>
+                <p className="text-blue-800 font-medium">
+                  {isFetching ? "Fetching latest data..." : "Loading vehicle data..."}
+                </p>
+                <p className="text-blue-600 text-sm">
+                  {storedData?.data?.length > 0 && `Loaded ${storedData.data.length.toLocaleString()} vehicles`}
+                </p>
+                {storedData?.loadTime && (
+                  <p className="text-blue-500 text-xs">
+                    API load time: {storedData.loadTime}
+                    {storedData.source === 'memory' && ' (from memory cache)'}
+                    {storedData.source === 'redis' && ' (from Redis)'}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
             <div className="flex items-center gap-2">
@@ -888,7 +1078,7 @@ const VehicleTrackingDashboard = () => {
                   </tr>
                 ) : sortedVehicles.length > 0 ? (
                   sortedVehicles.map((v) => (
-                    <tr key={v.imeiNo} className="hover:bg-gray-50 transition-colors">
+                    <tr key={v.uniqueId || `${v.imeiNo}-${v.vehicleNo}`} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">{v.ip}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">{v.vehicleNo}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{v.vehicleName}</td>

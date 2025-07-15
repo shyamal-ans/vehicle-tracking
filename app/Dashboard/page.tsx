@@ -1,6 +1,5 @@
 "use client";
 
-import { useGetStoredVehiclesQuery } from "@/slices/smartVehicleSlice";
 import React, { useEffect, useState } from "react";
 import { formatDateTime } from "@/Utils/Utils";
 
@@ -189,24 +188,24 @@ const AnalyticsDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   // Fetch all vehicles for analytics
-  const { data: storedData } = useGetStoredVehiclesQuery({
-    search: "",
-    page: 1,
-    pageSize: 999999,
-    server: "",
-    status: "",
-    platform: "",
-    company: "",
-    region: "",
-    project: "",
-  });
-
   useEffect(() => {
-    if (storedData?.data) {
-      setAllVehicles(storedData.data);
-      setIsLoading(false);
-    }
-  }, [storedData]);
+    const fetchAllData = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/vehicles/stored?page=1&pageSize=999999');
+        const data = await response.json();
+        if (data.success) {
+          setAllVehicles(data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching data for analytics:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAllData();
+  }, []);
 
   if (isLoading) {
     return (

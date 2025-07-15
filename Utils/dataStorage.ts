@@ -4,39 +4,30 @@ import {
   getCachedMetadata, 
   setCachedMetadata,
   hasCachedData 
-} from './cache';
+} from './redis';
 
-// In-memory storage as fallback
-let inMemoryData: any = null;
-
-// Read vehicle data - cache first, database fallback
-export const readVehicleData = (): any => {
+// Read vehicle data - Redis cache only
+export const readVehicleData = async (): Promise<any> => {
   try {
     console.log('🔍 readVehicleData: starting...');
     
-    // Try cache first
-    const cachedVehicles = getCachedVehicles();
-    const cachedMetadata = getCachedMetadata();
+    // Try Redis cache
+    const cachedVehicles = await getCachedVehicles();
+    const cachedMetadata = await getCachedMetadata();
     
-    console.log(`🔍 readVehicleData: cachedVehicles=${cachedVehicles.length}, cachedMetadata=${!!cachedMetadata}`);
+    console.log(`🔍 readVehicleData: cachedVehicles=${cachedVehicles.vehicles.length}, cachedMetadata=${!!cachedMetadata}`);
     
-    if (cachedVehicles.length > 0 && cachedMetadata) {
-      console.log(`📋 Using cached data: ${cachedVehicles.length} vehicles`);
+    if (cachedVehicles.vehicles.length > 0 && cachedMetadata) {
+      console.log(`📋 Using cached data: ${cachedVehicles.vehicles.length} vehicles`);
       return {
         vehicles: cachedVehicles,
         lastUpdated: cachedMetadata.lastUpdated,
-        totalRecords: cachedVehicles.length,
+        totalRecords: cachedVehicles.vehicles.length,
         metadata: cachedMetadata.metadata
       };
     }
     
-    // Cache is empty - fallback to in-memory data
-    if (inMemoryData) {
-      console.log(`💾 Using in-memory data: ${inMemoryData.vehicles?.length || 0} vehicles`);
-      return inMemoryData;
-    }
-    
-    console.log('❌ No data available in cache or memory');
+    console.log('❌ No data available in Redis cache');
     return null;
   } catch (error) {
     console.error('Error reading vehicle data:', error);
@@ -45,29 +36,25 @@ export const readVehicleData = (): any => {
 };
 
 // Check if we need to fetch data (cache is empty)
-export const needsDataFetch = (): boolean => {
-  const cachedVehicles = getCachedVehicles();
-  const cachedMetadata = getCachedMetadata();
+export const needsDataFetch = async (): Promise<boolean> => {
+  const cachedVehicles = await getCachedVehicles();
+  const cachedMetadata = await getCachedMetadata();
   
-  const hasCachedData = cachedVehicles.length > 0 && cachedMetadata;
-  const hasMemoryData = !!inMemoryData;
-  
-  const needsFetch = !hasCachedData && !hasMemoryData;
+  const hasCachedData = cachedVehicles.vehicles.length > 0 && cachedMetadata;
   
   console.log(`🔍 Data fetch check:`, {
     hasCachedData,
-    hasMemoryData,
-    needsFetch,
-    cachedVehicleCount: cachedVehicles.length
+    needsFetch: !hasCachedData,
+    cachedVehicleCount: cachedVehicles.vehicles.length
   });
   
-  return needsFetch;
+  return !hasCachedData;
 };
 
 // Get data age in hours
-export const getDataAge = (): number | null => {
+export const getDataAge = async (): Promise<number | null> => {
   try {
-    const cachedMetadata = getCachedMetadata();
+    const cachedMetadata = await getCachedMetadata();
     if (!cachedMetadata?.lastUpdated) return null;
     
     const lastUpdated = new Date(cachedMetadata.lastUpdated);
@@ -81,22 +68,21 @@ export const getDataAge = (): number | null => {
   }
 };
 
-// Write vehicle data - always use cache
-export const writeVehicleData = (data: any): boolean => {
+// Write vehicle data - Redis cache only
+export const writeVehicleData = async (data: any): Promise<boolean> => {
   try {
     console.log(`💾 writeVehicleData: storing ${data.vehicles?.length || 0} vehicles`);
     
-    // Store in cache and memory
-    const cacheResult = setCachedVehicles(data.vehicles);
-    const metadataResult = setCachedMetadata({
+    // Store in Redis cache
+    const cacheResult = await setCachedVehicles(data.vehicles);
+    const metadataResult = await setCachedMetadata({
       lastUpdated: data.lastUpdated,
       metadata: data.metadata
     });
-    inMemoryData = data;
     
     console.log(`💾 writeVehicleData: cacheResult=${cacheResult}, metadataResult=${metadataResult}`);
     
-    return true;
+    return cacheResult && metadataResult;
   } catch (error) {
     console.error('Error writing vehicle data:', error);
     return false;
@@ -104,9 +90,9 @@ export const writeVehicleData = (data: any): boolean => {
 };
 
 // Append vehicle data - replace data for same date range to prevent duplication
-export const appendVehicleData = (newVehicles: any[], metadata: any): boolean => {
+export const appendVehicleData = async (newVehicles: any[], metadata: any): Promise<boolean> => {
   try {
-    const existingData = readVehicleData();
+    const existingData = await readVehicleData();
     const currentVehicles = existingData?.vehicles || [];
     
     // Add metadata to each vehicle
@@ -143,7 +129,7 @@ export const appendVehicleData = (newVehicles: any[], metadata: any): boolean =>
       metadata
     };
     
-    return writeVehicleData(updatedData);
+    return await writeVehicleData(updatedData);
   } catch (error) {
     console.error('Error appending vehicle data:', error);
     return false;
@@ -151,9 +137,9 @@ export const appendVehicleData = (newVehicles: any[], metadata: any): boolean =>
 };
 
 // Clean old data (keep last 30 days)
-export const cleanOldData = (daysToKeep: number = 30): boolean => {
+export const cleanOldData = async (daysToKeep: number = 30): Promise<boolean> => {
   try {
-    const data = readVehicleData();
+    const data = await readVehicleData();
     if (!data || !data.vehicles) return true;
     
     const cutoffDate = new Date();
@@ -171,7 +157,7 @@ export const cleanOldData = (daysToKeep: number = 30): boolean => {
       lastUpdated: new Date().toISOString()
     };
     
-    return writeVehicleData(updatedData);
+    return await writeVehicleData(updatedData);
   } catch (error) {
     console.error('Error cleaning old data:', error);
     return false;
@@ -179,11 +165,10 @@ export const cleanOldData = (daysToKeep: number = 30): boolean => {
 };
 
 // Clear all vehicle data
-export const clearAllVehicleData = (): boolean => {
+export const clearAllVehicleData = async (): Promise<boolean> => {
   try {
-    setCachedVehicles([]);
-    setCachedMetadata(null);
-    inMemoryData = null;
+    await setCachedVehicles([]);
+    await setCachedMetadata(null);
     console.log('🗑️ All vehicle data cleared successfully');
     return true;
   } catch (error) {
@@ -193,9 +178,9 @@ export const clearAllVehicleData = (): boolean => {
 };
 
 // Get data statistics
-export const getDataStats = () => {
+export const getDataStats = async () => {
   try {
-    const data = readVehicleData();
+    const data = await readVehicleData();
     if (!data || !data.vehicles) {
       return {
         totalVehicles: 0,
@@ -228,7 +213,7 @@ export const getDataStats = () => {
 };
 
 // Get vehicles with optional filtering
-export const getVehicles = (
+export const getVehicles = async (
   filters?: {
     search?: string;
     page?: number;
@@ -242,9 +227,9 @@ export const getVehicles = (
     region?: string;
     project?: string;
   }
-): { vehicles: VehicleData[]; total: number; page: number; pageSize: number } => {
+): Promise<{ vehicles: VehicleData[]; total: number; page: number; pageSize: number }> => {
   try {
-    const data = readVehicleData();
+    const data = await readVehicleData();
     if (!data) {
       return { vehicles: [], total: 0, page: 1, pageSize: 10 };
     }

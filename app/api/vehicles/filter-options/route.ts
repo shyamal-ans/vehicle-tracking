@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readVehicleData, VehicleData } from '@/Utils/dataStorage';
-import { getCachedFilterOptions, setCachedFilterOptions, clearFilterOptionsCache } from '@/Utils/cache';
+import { getCachedFilterOptions, setCachedFilterOptions, clearFilterOptionsCache } from '@/Utils/redis';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     
     // Try to get cached filter options first (unless force refresh)
     if (!forceRefresh) {
-      const cachedOptions = getCachedFilterOptions();
+      const cachedOptions = await getCachedFilterOptions();
       if (cachedOptions) {
         console.log('📋 Using cached filter options');
         return NextResponse.json({
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('🔄 Computing filter options from cached data...');
-    const data = readVehicleData();
+    const data = await readVehicleData();
     
     console.log('📊 Data status:', {
       hasData: !!data,
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
       };
       
       // Cache empty options for 24 hours
-      setCachedFilterOptions(emptyOptions, 86400); // 24 hours
+      await setCachedFilterOptions(emptyOptions, 86400); // 24 hours
       
       return NextResponse.json({
         success: true,
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Cache the filter options
-    setCachedFilterOptions(filterOptions);
+    await setCachedFilterOptions(filterOptions);
 
     return NextResponse.json({
       success: true,
@@ -122,10 +122,10 @@ export async function POST() {
     console.log('🔄 Force refreshing filter options...');
     
     // Clear cached filter options
-    clearFilterOptionsCache();
+    await clearFilterOptionsCache();
     
     // Recompute from fresh data
-    const data = readVehicleData();
+    const data = await readVehicleData();
     
     if (!data || !data.vehicles || data.vehicles.length === 0) {
       return NextResponse.json({
@@ -158,7 +158,7 @@ export async function POST() {
     };
 
     // Cache the filter options
-    setCachedFilterOptions(filterOptions);
+    await setCachedFilterOptions(filterOptions);
 
     return NextResponse.json({
       success: true,
