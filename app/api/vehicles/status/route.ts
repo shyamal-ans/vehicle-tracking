@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { readVehicleData, needsDataFetch, getDataAge, getDataStats } from '@/Utils/dataStorage';
-import { getCacheInfo } from '@/Utils/redis';
 
 export async function GET() {
   try {
@@ -8,7 +7,13 @@ export async function GET() {
     const needsFetch = await needsDataFetch();
     const dataAge = await getDataAge();
     const dataStats = await getDataStats();
-    const cacheInfo = await getCacheInfo();
+    
+    // Simple cache info without Redis
+    const cacheInfo = {
+      type: 'file',
+      status: 'available',
+      source: 'JSON file'
+    };
     
     // Determine status
     let status = 'unknown';

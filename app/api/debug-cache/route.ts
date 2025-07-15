@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCachedVehicles, getCachedMetadata, getCacheInfo } from '@/Utils/redis';
+import { readVehicleData } from '@/Utils/dataStorage';
 
 export async function GET(request: NextRequest) {
   try {
     const startTime = Date.now();
     
-    // Get cache info
-    const cacheInfo = await getCacheInfo();
+    // Simple cache info without Redis
+    const cacheInfo = {
+      type: 'file',
+      status: 'available',
+      source: 'JSON file'
+    };
     
     // Test data loading performance
     const dataStartTime = Date.now();
-    const vehiclesResult = await getCachedVehicles();
+    const data = await readVehicleData();
     const dataLoadTime = Date.now() - dataStartTime;
-    const vehicles = vehiclesResult?.vehicles || [];
+    const vehicles = data?.vehicles || [];
     
     const totalTime = Date.now() - startTime;
     
@@ -53,26 +57,14 @@ export async function POST() {
       metadata: { test: true }
     };
     
-    console.log('🧪 Setting test data in cache...');
-    // setCachedVehicles(testVehicles); // This line was removed as per the new_code
-    // setCachedMetadata(testMetadata); // This line was removed as per the new_code
-    
-    // Immediately read it back
-    const readVehiclesResult = await getCachedVehicles();
-    const readMetadata = await getCachedMetadata();
-    
-    console.log('🧪 Test data set and read back:', {
-      setCount: testVehicles.length,
-      readCount: readVehiclesResult.vehicles.length,
-      metadataMatch: JSON.stringify(readMetadata) === JSON.stringify(testMetadata)
-    });
+    console.log('🧪 Test data created (no Redis cache to set)');
     
     return NextResponse.json({
       success: true,
-      message: 'Test data set and read back',
+      message: 'Test data created (no Redis cache)',
       setCount: testVehicles.length,
-      readCount: readVehiclesResult.vehicles.length,
-      metadataMatch: JSON.stringify(readMetadata) === JSON.stringify(testMetadata),
+      readCount: 0, // No Redis to read from
+      metadataMatch: false, // No Redis to compare
       timestamp: new Date().toISOString()
     });
   } catch (error) {

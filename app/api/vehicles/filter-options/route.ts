@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readVehicleData, VehicleData } from '@/Utils/dataStorage';
-import { getCachedFilterOptions, setCachedFilterOptions, clearFilterOptionsCache } from '@/Utils/redis';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,27 +8,7 @@ export async function GET(request: NextRequest) {
     
     console.log('🔍 Filter options request:', { forceRefresh });
     
-    // Clear cache if force refresh is requested
-    if (forceRefresh) {
-      console.log('🔄 Force refresh requested - clearing filter options cache');
-      clearFilterOptionsCache();
-    }
-    
-    // Try to get cached filter options first (unless force refresh)
-    if (!forceRefresh) {
-      const cachedOptions = await getCachedFilterOptions();
-      if (cachedOptions) {
-        console.log('📋 Using cached filter options');
-        return NextResponse.json({
-          success: true,
-          data: cachedOptions,
-          timestamp: new Date().toISOString(),
-          source: 'cache'
-        });
-      }
-    }
-
-    console.log('🔄 Computing filter options from cached data...');
+    console.log('🔄 Computing filter options from data...');
     const data = await readVehicleData();
     
     console.log('📊 Data status:', {
@@ -47,9 +26,6 @@ export async function GET(request: NextRequest) {
         regions: [],
         projects: []
       };
-      
-      // Cache empty options for 24 hours
-      await setCachedFilterOptions(emptyOptions, 86400); // 24 hours
       
       return NextResponse.json({
         success: true,
@@ -83,9 +59,6 @@ export async function GET(request: NextRequest) {
       regions: regions.length,
       projects: projects.length
     });
-
-    // Cache the filter options
-    await setCachedFilterOptions(filterOptions);
 
     return NextResponse.json({
       success: true,
@@ -121,9 +94,6 @@ export async function POST() {
   try {
     console.log('🔄 Force refreshing filter options...');
     
-    // Clear cached filter options
-    await clearFilterOptionsCache();
-    
     // Recompute from fresh data
     const data = await readVehicleData();
     
@@ -156,9 +126,6 @@ export async function POST() {
       regions,
       projects
     };
-
-    // Cache the filter options
-    await setCachedFilterOptions(filterOptions);
 
     return NextResponse.json({
       success: true,

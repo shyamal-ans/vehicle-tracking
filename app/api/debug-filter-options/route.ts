@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getCachedFilterOptions, clearFilterOptionsCache } from '@/Utils/redis';
 import { readVehicleData } from '@/Utils/dataStorage';
 
 export async function GET() {
   try {
-    const cachedOptions = await getCachedFilterOptions();
     const data = await readVehicleData();
     
     // Sample some project names from the data
@@ -15,8 +13,8 @@ export async function GET() {
     
     return NextResponse.json({
       success: true,
-      cachedOptions,
-      hasCachedOptions: !!cachedOptions,
+      cachedOptions: null, // No Redis cache
+      hasCachedOptions: false, // No Redis cache
       sampleProjects,
       totalVehicles: data?.total || 0,
       timestamp: new Date().toISOString()
@@ -34,12 +32,11 @@ export async function GET() {
 
 export async function POST() {
   try {
-    console.log('🧹 Clearing filter options cache...');
-    await clearFilterOptionsCache();
+    console.log('🧹 No cache to clear (Redis removed)');
     
     return NextResponse.json({
       success: true,
-      message: 'Filter options cache cleared',
+      message: 'No cache to clear (Redis removed)',
       timestamp: new Date().toISOString()
     });
   } catch (error) {

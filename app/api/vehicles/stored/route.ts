@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCachedVehicles, getCachedMetadata } from '@/Utils/redis';
-import { revalidatePath } from 'next/cache';
+import { readVehicleData } from '@/Utils/dataStorage';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,22 +10,35 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '10000'); // Default to 10k per page
     
-    // Load from Redis
-    console.log('🔄 Loading data from Redis...');
-    const [vehiclesResult, metadata] = await Promise.all([
-      getCachedVehicles(),
-      getCachedMetadata()
-    ]);
+    // Load from JSON file
+    console.log('🔄 Loading data from JSON file...');
+    const data = await readVehicleData();
     
-    const { vehicles, total } = vehiclesResult;
+    if (!data) {
+      return NextResponse.json({
+        success: true,
+        data: [],
+        pagination: {
+          page: 1,
+          pageSize: 10000,
+          total: 0,
+          totalPages: 1,
+          hasMore: false
+        },
+        metadata: null,
+        timestamp: new Date().toISOString(),
+        loadTime: `${Date.now() - startTime}ms`,
+        source: 'file'
+      });
+    }
     
     // Apply pagination
     const startIndex = (page - 1) * pageSize;
     const endIndex = startIndex + pageSize;
-    const paginatedVehicles = vehicles.slice(startIndex, endIndex);
+    const paginatedVehicles = data.vehicles.slice(startIndex, endIndex);
     
     const loadTime = Date.now() - startTime;
-    console.log(`⚡ API loaded ${paginatedVehicles.length}/${total} vehicles (page ${page}) from Redis in ${loadTime}ms`);
+    console.log(`⚡ API loaded ${paginatedVehicles.length}/${data.vehicles.length} vehicles (page ${page}) from JSON file in ${loadTime}ms`);
     
     const responseData = {
       success: true,
@@ -34,37 +46,31 @@ export async function GET(request: NextRequest) {
       pagination: {
         page,
         pageSize,
-        total: total,
-        totalPages: Math.ceil(total / pageSize),
-        hasMore: (page * pageSize) < total
+        total: data.vehicles.length,
+        totalPages: Math.ceil(data.vehicles.length / pageSize),
+        hasMore: (page * pageSize) < data.vehicles.length
       },
-      metadata: metadata ? {
-        lastUpdated: metadata.lastUpdated,
-        totalRecords: total,
-        metadata: metadata.metadata
-      } : null,
+      metadata: {
+        lastUpdated: data.lastUpdated,
+        totalRecords: data.vehicles.length,
+        metadata: data.metadata
+      },
       timestamp: new Date().toISOString(),
       loadTime: `${loadTime}ms`,
-      source: 'redis'
+      source: 'file'
     };
 
-    // Return with Vercel Edge Cache headers
+    // Return with cache headers for browser caching
     return NextResponse.json(responseData, {
       headers: {
-        // Cache for 24 hours at the edge
-        'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=86400',
-        // Also cache in browser for 1 hour
-        'CDN-Cache-Control': 'public, max-age=3600',
-        // Vercel-specific cache headers
-        'Vercel-CDN-Cache-Control': 'public, max-age=86400',
-        'Vercel-Cache-Control': 'public, max-age=86400'
+        'Cache-Control': 'public, max-age=300', // Cache for 5 minutes in browser
       }
     });
 
   } catch (error) {
     console.error('Error fetching stored vehicles:', error);
     
-    const errorResponse = {
+    return NextResponse.json({
       success: true,
       data: [],
       pagination: {
@@ -76,34 +82,26 @@ export async function GET(request: NextRequest) {
       },
       metadata: null,
       timestamp: new Date().toISOString()
-    };
-
-    return NextResponse.json(errorResponse, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=300' // Cache errors for 5 minutes
-      }
     });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Invalidate Vercel Edge Cache
-    revalidatePath('/api/vehicles/stored');
-    
-    console.log('🔄 Vercel Edge Cache invalidated for /api/vehicles/stored');
+    // This endpoint can be used to trigger data refresh
+    console.log('🔄 Manual data refresh requested');
     
     return NextResponse.json({
       success: true,
-      message: 'Cache invalidated successfully',
+      message: 'Manual refresh endpoint - use /api/cron/fetch-vehicles to refresh data',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error invalidating cache:', error);
+    console.error('Error in manual refresh:', error);
     
     return NextResponse.json({
       success: false,
-      error: 'Failed to invalidate cache',
+      error: 'Failed to process refresh request',
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }

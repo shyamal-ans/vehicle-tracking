@@ -1,0 +1,89 @@
+name: 🚀 Deploy to Hostinger VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🛠 Build the app
+        run: npm run build
+
+      - name: 📤 Copy files to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          source: ".next,public,package.json,package-lock.json,next.config.js,data,Utils,app,components,lib,slices,redux,graphql,server.js"
+          target: "/var/www/nextjs-app"
+          strip_components: 0
+
+      - name: 🚀 Restart app on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          script: |
+            cd /var/www/nextjs-app
+            
+            # Install production dependencies
+            npm ci --omit=dev
+            
+            # Create data directory if it doesn't exist
+            mkdir -p data
+            
+            # Set proper permissions
+            chmod 755 data
+            chmod 644 data/*.json 2>/dev/null || true
+            
+            # Restart the application
+            if pm2 list | grep -q "nextjs-app"; then
+              pm2 restart nextjs-app
+            else
+              pm2 start npm --name "nextjs-app" -- start
+            fi
+            
+            # Save PM2 configuration
+            pm2 save
+            
+            echo "✅ Deployment completed successfully!"
+
+      - name: 🔍 Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          script: |
+            # Wait a moment for the app to start
+            sleep 10
+            
+            # Check if the app is running
+            if pm2 list | grep -q "nextjs-app.*online"; then
+              echo "✅ Application is running successfully!"
+              
+              # Test the API endpoint
+              curl -f http://localhost:3000/api/vehicles/status || echo "⚠️ API endpoint not responding yet"
+            else
+              echo "❌ Application failed to start"
+              pm2 logs nextjs-app --lines 20
+              exit 1
+            fi
