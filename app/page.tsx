@@ -266,13 +266,8 @@ const VehicleTrackingDashboard = () => {
       const result = await response.json();
       console.log('✅ Manual fetch completed:', result);
       
-      // Invalidate Vercel Edge Cache
-      try {
-        await fetch('/api/vehicles/stored', { method: 'POST' });
-        console.log('🔄 Vercel Edge Cache invalidated');
-      } catch (cacheError) {
-        console.warn('⚠️ Failed to invalidate cache:', cacheError);
-      }
+      // Data refresh completed
+      console.log('🔄 Data refresh completed');
       
       // Refetch the main data after manual fetch
       await refetchStored();
@@ -781,8 +776,7 @@ const VehicleTrackingDashboard = () => {
                 {storedData?.loadTime && (
                   <p className="text-blue-500 text-xs">
                     API load time: {storedData.loadTime}
-                    {storedData.source === 'memory' && ' (from memory cache)'}
-                    {storedData.source === 'redis' && ' (from Redis)'}
+                    {storedData.source === 'file' && ' (from JSON file)'}
                   </p>
                 )}
               </div>

@@ -1,95 +1,70 @@
-import { 
-  getCachedVehicles, 
-  setCachedVehicles, 
-  getCachedMetadata, 
-  setCachedMetadata,
-  hasCachedData 
-} from './redis';
+import { promises as fs } from 'fs';
+import path from 'path';
 
-// Read vehicle data - Redis cache only
+// File paths for data storage
+const DATA_DIR = path.join(process.cwd(), 'data');
+const VEHICLES_FILE = path.join(DATA_DIR, 'vehicles.json');
+const METADATA_FILE = path.join(DATA_DIR, 'metadata.json');
+
+// Ensure data directory exists
+const ensureDataDir = async () => {
+  try {
+    await fs.access(DATA_DIR);
+  } catch {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    console.log('📁 Created data directory');
+  }
+};
+
+// Read vehicle data from JSON file
 export const readVehicleData = async (): Promise<any> => {
   try {
-    console.log('🔍 readVehicleData: starting...');
+    await ensureDataDir();
     
-    // Try Redis cache
-    const cachedVehicles = await getCachedVehicles();
-    const cachedMetadata = await getCachedMetadata();
+    const vehiclesData = await fs.readFile(VEHICLES_FILE, 'utf-8');
+    const metadataData = await fs.readFile(METADATA_FILE, 'utf-8');
     
-    console.log(`🔍 readVehicleData: cachedVehicles=${cachedVehicles.vehicles.length}, cachedMetadata=${!!cachedMetadata}`);
+    const vehicles = JSON.parse(vehiclesData);
+    const metadata = JSON.parse(metadataData);
     
-    if (cachedVehicles.vehicles.length > 0 && cachedMetadata) {
-      console.log(`📋 Using cached data: ${cachedVehicles.vehicles.length} vehicles`);
-      return {
-        vehicles: cachedVehicles,
-        lastUpdated: cachedMetadata.lastUpdated,
-        totalRecords: cachedVehicles.vehicles.length,
-        metadata: cachedMetadata.metadata
-      };
-    }
+    console.log(`📋 Loaded ${vehicles.length} vehicles from JSON file`);
     
-    console.log('❌ No data available in Redis cache');
-    return null;
+    return {
+      vehicles,
+      lastUpdated: metadata.lastUpdated,
+      totalRecords: vehicles.length,
+      metadata: metadata.metadata
+    };
   } catch (error) {
-    console.error('Error reading vehicle data:', error);
+    console.log('📁 No existing data found, starting fresh');
     return null;
   }
 };
 
-// Check if we need to fetch data (cache is empty)
-export const needsDataFetch = async (): Promise<boolean> => {
-  const cachedVehicles = await getCachedVehicles();
-  const cachedMetadata = await getCachedMetadata();
-  
-  const hasCachedData = cachedVehicles.vehicles.length > 0 && cachedMetadata;
-  
-  console.log(`🔍 Data fetch check:`, {
-    hasCachedData,
-    needsFetch: !hasCachedData,
-    cachedVehicleCount: cachedVehicles.vehicles.length
-  });
-  
-  return !hasCachedData;
-};
-
-// Get data age in hours
-export const getDataAge = async (): Promise<number | null> => {
-  try {
-    const cachedMetadata = await getCachedMetadata();
-    if (!cachedMetadata?.lastUpdated) return null;
-    
-    const lastUpdated = new Date(cachedMetadata.lastUpdated);
-    const now = new Date();
-    const ageInHours = (now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60);
-    
-    return ageInHours;
-  } catch (error) {
-    console.error('Error calculating data age:', error);
-    return null;
-  }
-};
-
-// Write vehicle data - Redis cache only
+// Write vehicle data to JSON file
 export const writeVehicleData = async (data: any): Promise<boolean> => {
   try {
-    console.log(`💾 writeVehicleData: storing ${data.vehicles?.length || 0} vehicles`);
+    await ensureDataDir();
     
-    // Store in Redis cache
-    const cacheResult = await setCachedVehicles(data.vehicles);
-    const metadataResult = await setCachedMetadata({
+    // Write vehicles data
+    await fs.writeFile(VEHICLES_FILE, JSON.stringify(data.vehicles, null, 2));
+    
+    // Write metadata
+    const metadata = {
       lastUpdated: data.lastUpdated,
       metadata: data.metadata
-    });
+    };
+    await fs.writeFile(METADATA_FILE, JSON.stringify(metadata, null, 2));
     
-    console.log(`💾 writeVehicleData: cacheResult=${cacheResult}, metadataResult=${metadataResult}`);
-    
-    return cacheResult && metadataResult;
+    console.log(`💾 Saved ${data.vehicles.length} vehicles to JSON file`);
+    return true;
   } catch (error) {
     console.error('Error writing vehicle data:', error);
     return false;
   }
 };
 
-// Append vehicle data - replace data for same date range to prevent duplication
+// Append vehicle data (replace data for same date range)
 export const appendVehicleData = async (newVehicles: any[], metadata: any): Promise<boolean> => {
   try {
     const existingData = await readVehicleData();
@@ -136,7 +111,27 @@ export const appendVehicleData = async (newVehicles: any[], metadata: any): Prom
   }
 };
 
-// Clean old data (keep last 30 days)
+// Clear all vehicle data
+export const clearAllVehicleData = async (): Promise<boolean> => {
+  try {
+    await ensureDataDir();
+    
+    // Write empty data
+    await fs.writeFile(VEHICLES_FILE, JSON.stringify([], null, 2));
+    await fs.writeFile(METADATA_FILE, JSON.stringify({
+      lastUpdated: new Date().toISOString(),
+      metadata: {}
+    }, null, 2));
+    
+    console.log('🗑️ All vehicle data cleared successfully');
+    return true;
+  } catch (error) {
+    console.error('Error clearing vehicle data:', error);
+    return false;
+  }
+};
+
+// Clean old data (keep last N days)
 export const cleanOldData = async (daysToKeep: number = 30): Promise<boolean> => {
   try {
     const data = await readVehicleData();
@@ -164,16 +159,20 @@ export const cleanOldData = async (daysToKeep: number = 30): Promise<boolean> =>
   }
 };
 
-// Clear all vehicle data
-export const clearAllVehicleData = async (): Promise<boolean> => {
+// Get data age in hours
+export const getDataAge = async (): Promise<number | null> => {
   try {
-    await setCachedVehicles([]);
-    await setCachedMetadata(null);
-    console.log('🗑️ All vehicle data cleared successfully');
-    return true;
+    const data = await readVehicleData();
+    if (!data?.lastUpdated) return null;
+    
+    const lastUpdated = new Date(data.lastUpdated);
+    const now = new Date();
+    const ageInHours = (now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60);
+    
+    return ageInHours;
   } catch (error) {
-    console.error('Error clearing vehicle data:', error);
-    return false;
+    console.error('Error calculating data age:', error);
+    return null;
   }
 };
 
@@ -212,113 +211,19 @@ export const getDataStats = async () => {
   }
 };
 
-// Get vehicles with optional filtering
-export const getVehicles = async (
-  filters?: {
-    search?: string;
-    page?: number;
-    pageSize?: number;
-    startDate?: string;
-    endDate?: string;
-    server?: string;
-    status?: string;
-    platform?: string;
-    company?: string;
-    region?: string;
-    project?: string;
-  }
-): Promise<{ vehicles: VehicleData[]; total: number; page: number; pageSize: number }> => {
+// Check if we need to fetch data (data is empty or old)
+export const needsDataFetch = async (): Promise<boolean> => {
   try {
     const data = await readVehicleData();
-    if (!data) {
-      return { vehicles: [], total: 0, page: 1, pageSize: 10 };
+    if (!data || data.vehicles.length === 0) {
+      return true;
     }
     
-    let filteredVehicles = [...data.vehicles];
-    
-    // Apply search filter
-    if (filters?.search) {
-      const searchLower = filters.search.toLowerCase();
-      filteredVehicles = filteredVehicles.filter(vehicle =>
-        Object.values(vehicle).some((val) =>
-          String(val).toLowerCase().includes(searchLower)
-        )
-      );
-    }
-
-    // Apply server filter (IP)
-    if (filters?.server) {
-      filteredVehicles = filteredVehicles.filter(vehicle =>
-        vehicle.ip.toLowerCase().includes(filters.server!.toLowerCase())
-      );
-    }
-
-    // Apply status filter (InActiveDays)
-    if (filters?.status) {
-      if (filters.status === "Active") {
-        filteredVehicles = filteredVehicles.filter(vehicle => vehicle.InActiveDays === 0);
-      } else if (filters.status === "Inactive") {
-        filteredVehicles = filteredVehicles.filter(vehicle => vehicle.InActiveDays > 0);
-      }
-    }
-
-    // Apply platform filter (projectName)
-    if (filters?.platform) {
-      filteredVehicles = filteredVehicles.filter(vehicle =>
-        vehicle.projectName.toLowerCase().includes(filters.platform!.toLowerCase())
-      );
-    }
-
-    // Apply company filter
-    if (filters?.company) {
-      filteredVehicles = filteredVehicles.filter(vehicle =>
-        vehicle.companyName.toLowerCase().includes(filters.company!.toLowerCase())
-      );
-    }
-
-    // Apply region filter
-    if (filters?.region) {
-      filteredVehicles = filteredVehicles.filter(vehicle =>
-        vehicle.region.toLowerCase().includes(filters.region!.toLowerCase())
-      );
-    }
-
-    // Apply project filter (projectName)
-    if (filters?.project) {
-      filteredVehicles = filteredVehicles.filter(vehicle =>
-        vehicle.projectName.toLowerCase().includes(filters.project!.toLowerCase())
-      );
-    }
-    
-    // Apply date range filter
-    if (filters?.startDate || filters?.endDate) {
-      filteredVehicles = filteredVehicles.filter(vehicle => {
-        const fetchedDate = new Date(vehicle.fetchedAt);
-        const startDate = filters.startDate ? new Date(filters.startDate) : null;
-        const endDate = filters.endDate ? new Date(filters.endDate) : null;
-        
-        if (startDate && fetchedDate < startDate) return false;
-        if (endDate && fetchedDate > endDate) return false;
-        return true;
-      });
-    }
-    
-    // Apply pagination
-    const page = filters?.page || 1;
-    const pageSize = filters?.pageSize || 10;
-    const startIndex = (page - 1) * pageSize;
-    const endIndex = pageSize >= 999999 ? filteredVehicles.length : startIndex + pageSize;
-    const paginatedVehicles = filteredVehicles.slice(startIndex, endIndex);
-    
-    return {
-      vehicles: paginatedVehicles,
-      total: filteredVehicles.length,
-      page,
-      pageSize
-    };
+    const ageInHours = await getDataAge();
+    return ageInHours === null || ageInHours > 1; // Fetch if older than 1 hour
   } catch (error) {
-    console.error('Error getting vehicles:', error);
-    return { vehicles: [], total: 0, page: 1, pageSize: 10 };
+    console.error('Error checking if data fetch is needed:', error);
+    return true;
   }
 };
 

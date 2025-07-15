@@ -163,15 +163,15 @@ export async function POST(request: NextRequest) {
     const updatedData = await readVehicleData();
     
     console.log(`✅ Manual refresh completed successfully`);
-    console.log(`📁 Total vehicles stored: ${updatedData?.totalRecords || 0}`);
+    console.log(`📁 Total vehicles stored: ${updatedData?.total || 0}`);
 
     return NextResponse.json({
       success: true,
       message: 'Manual refresh completed successfully',
       type: 'manual_refresh',
       newVehicles: vehicles.length,
-      totalVehicles: updatedData?.totalRecords || 0,
-      lastUpdated: updatedData?.lastUpdated || new Date().toISOString(),
+      totalVehicles: updatedData?.total || 0,
+      lastUpdated: new Date().toISOString(),
       timestamp: new Date().toISOString()
     });
 
