@@ -2,16 +2,6 @@
 const nextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
-  experimental: {
-    images: {
-      allowFutureImage: true,
-    },
-  },
-  i18n: {
-    locales: ['en', 'es'],
-    defaultLocale: 'en',
-    localeDetection: false,
-  },
   /* Redirects */
   async redirects() {
     return [

@@ -1,14 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getDataStats, clearAllVehicleData, readVehicleData, needsDataFetch, getDataAge } from '@/Utils/dataStorage';
-import { getCacheInfo } from '@/Utils/redis';
 
 export async function GET() {
   try {
     const dataStats = await getDataStats();
-    const cacheInfo = await getCacheInfo();
     const vehicleData = await readVehicleData();
     const needsFetch = await needsDataFetch();
     const dataAge = await getDataAge();
+    
+    // Simple cache info without Redis
+    const cacheInfo = {
+      type: 'file',
+      status: 'available',
+      source: 'JSON file'
+    };
     
     return NextResponse.json({
       success: true,
