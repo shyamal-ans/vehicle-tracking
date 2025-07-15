@@ -282,20 +282,20 @@ const VehicleTrackingDashboard = () => {
   // Auto-fetch data if no data is present
   useEffect(() => {
     if (!hasAutoFetched && !isLoadingStored && storedData && storedData.data.length === 0) {
-      console.log('📁 No vehicle data found. Auto-fetching...');
+      console.log('📁 No vehicle data found. Auto-fetching from external API...');
       setHasAutoFetched(true);
       
-      // Try to trigger fetch, but don't fail if it doesn't work
+      // Trigger external API fetch
       triggerFetch()
-        .then(() => {
-          console.log('✅ Auto-fetch completed successfully');
+        .then((result) => {
+          console.log('✅ Auto-fetch completed successfully:', result);
         })
         .catch((error: any) => {
-          console.warn('⚠️ Auto-fetch failed (this is normal if no cron endpoint exists):', error);
+          console.warn('⚠️ Auto-fetch failed:', error);
           // Don't show error to user, this is expected behavior
         });
     }
-  }, [storedData, isLoadingStored, hasAutoFetched, triggerFetch, refetchStored]);
+  }, [storedData, isLoadingStored, hasAutoFetched, triggerFetch]);
 
   // Store all data and apply client-side filtering
   const [allVehicles, setAllVehicles] = useState<Vehicle[]>([]);
@@ -564,7 +564,11 @@ const VehicleTrackingDashboard = () => {
               <button
                 onClick={() => triggerFetch()}
                 disabled={isFetching}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  allVehicles.length === 0 
+                    ? 'bg-red-600 text-white hover:bg-red-700' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {isFetching ? (
                   <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
@@ -576,7 +580,12 @@ const VehicleTrackingDashboard = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                 )}
-                {isFetching ? "Fetching..." : "Fetch Latest Data"}
+                {isFetching 
+                  ? "Fetching..." 
+                  : allVehicles.length === 0 
+                    ? "Fetch Data (No Vehicles)" 
+                    : "Fetch Latest Data"
+                }
               </button>
 
               <button
