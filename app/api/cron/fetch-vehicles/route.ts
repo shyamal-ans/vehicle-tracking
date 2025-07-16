@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { appendVehicleData, cleanOldData, readVehicleData, needsDataFetch, getDataAge } from '@/Utils/dataStorage';
+import { appendVehicleData, writeVehicleData, cleanOldData, readVehicleData, needsDataFetch, getDataAge } from '@/Utils/dataStorage';
 
 const credentials = {
   username: 'shyamal@ansgujarat.in',
@@ -96,6 +96,16 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔄 Cron job triggered - checking data freshness...');
     
+    // Parse request body to check for overwrite parameter
+    let shouldOverwrite = false;
+    try {
+      const body = await request.json();
+      shouldOverwrite = body.overwrite || false;
+      console.log(`📋 Overwrite mode: ${shouldOverwrite}`);
+    } catch (error) {
+      console.log('📋 No overwrite parameter provided, using default logic');
+    }
+    
     // Get current data age and vehicle count
     const dataAge = await getDataAge();
     const currentData = await readVehicleData();
@@ -103,24 +113,44 @@ export async function POST(request: NextRequest) {
     
     console.log(`📊 Current data age: ${dataAge?.toFixed(1)} hours, vehicles: ${currentVehicleCount}`);
     
+    // Check if data is from today
+    const currentDate = new Date();
+    const todayString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${String(currentDate.getDate()).padStart(2, "0")}`;
+    
+    let isDataFromToday = false;
+    if (currentData?.metadata?.startDate) {
+      const dataDate = currentData.metadata.startDate.split(' ')[0]; // Extract date part
+      isDataFromToday = dataDate === todayString;
+      console.log(`📅 Data date: ${dataDate}, Today: ${todayString}, Is from today: ${isDataFromToday}`);
+    }
+    
     // Force fetch if there are 0 vehicles, regardless of data age
     if (currentVehicleCount === 0) {
       console.log('🚨 No vehicles found - forcing fetch from external API');
     }
-    // Check if data is fresh (less than 1 hour old) and we have vehicles
-    else if (dataAge !== null && dataAge < 1) {
-      console.log('✅ Data is fresh (less than 1 hour old) - skipping fetch');
+    // Check if data is from today and fresh (less than 1 hour old) and not in overwrite mode
+    else if (!shouldOverwrite && isDataFromToday && dataAge !== null && dataAge < 1) {
+      console.log('✅ Data is from today and fresh (less than 1 hour old) - skipping fetch');
       return NextResponse.json({
         success: true,
-        message: 'Data is fresh, no fetch needed',
+        message: 'Data is from today and fresh, no fetch needed',
         type: 'skip_fresh',
         dataAge: dataAge,
         vehicleCount: currentVehicleCount,
+        isDataFromToday: true,
         timestamp: new Date().toISOString()
       });
     }
+    // Data is from previous day or overwrite mode - ALWAYS fetch new data
+    else if (!isDataFromToday || shouldOverwrite) {
+      console.log(shouldOverwrite ? '🔄 Overwrite mode enabled - fetching fresh data' : '📅 Data is from previous day - fetching fresh data for today');
+    }
+    // Data is from today but older than 1 hour - refresh
+    else {
+      console.log('🔄 Data is from today but older than 1 hour - refreshing data');
+    }
     
-    console.log('🚀 Data is stale or missing - fetching fresh data from API...');
+    console.log('🚀 Fetching fresh data from API...');
 
     // Fetch all vehicles from the API
     const vehicles = await fetchAllVehicles();
@@ -139,10 +169,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Get today's date range for metadata
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
+    const todayForMetadata = new Date();
+    const yyyy = todayForMetadata.getFullYear();
+    const mm = String(todayForMetadata.getMonth() + 1).padStart(2, "0");
+    const dd = String(todayForMetadata.getDate()).padStart(2, "0");
     const startDate = `${yyyy}-${mm}-${dd} 00:00:00`;
     const endDate = `${yyyy}-${mm}-${dd} 23:59:59`;
 
@@ -154,8 +184,30 @@ export async function POST(request: NextRequest) {
       endDate
     };
 
-    // Store new data (will replace if same date range)
-    const success = await appendVehicleData(vehicles, metadata);
+    // Store new data (overwrite if from previous day, append if from today)
+    let success;
+    if (shouldOverwrite || !isDataFromToday) {
+      // Overwrite completely for previous day data
+      const vehiclesWithMetadata = vehicles.map(vehicle => ({
+        ...vehicle,
+        fetchedAt: new Date().toISOString(),
+        startDate: metadata.startDate,
+        endDate: metadata.endDate
+      }));
+      
+      const updatedData = {
+        vehicles: vehiclesWithMetadata,
+        lastUpdated: new Date().toISOString(),
+        totalRecords: vehiclesWithMetadata.length,
+        metadata
+      };
+      
+      success = await writeVehicleData(updatedData);
+      console.log(`🔄 Completely overwrote vehicle data with ${vehiclesWithMetadata.length} new vehicles`);
+    } else {
+      // Append for same day data
+      success = await appendVehicleData(vehicles, metadata);
+    }
     
     if (!success) {
       throw new Error('Failed to store vehicle data');
@@ -193,6 +245,8 @@ export async function POST(request: NextRequest) {
       totalVehicles: updatedData?.totalRecords || 0,
       lastUpdated: updatedData?.lastUpdated || new Date().toISOString(),
       dataAge: dataAge,
+      isDataFromToday: true,
+      dataDate: todayString,
       timestamp: new Date().toISOString()
     });
 
