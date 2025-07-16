@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
       source: 'file'
     };
 
-    // Return with cache headers for browser caching
+    // Return without caching to ensure fresh data
     return NextResponse.json(responseData, {
       headers: {
         'Cache-Control': 'public, max-age=300', // Cache for 5 minutes in browser
