@@ -386,7 +386,7 @@ const AnalyticsDashboard = () => {
   const pieColors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
 
   return (
-    <div className="min-h-screen bg-white p-6">
+    <div className="bg-white p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl shadow-xl p-8 mb-8 border border-blue-200">
