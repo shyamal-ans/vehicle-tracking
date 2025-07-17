@@ -28,14 +28,14 @@ type Vehicle = {
   uniqueId?: string;
 };
 
-// 1. Change the default pageSize from 100 to 1000
+// Optimized page size for better performance
 const pageSize = 1000;
 
 const VehicleTrackingDashboard = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasAutoFetched, setHasAutoFetched] = useState(false);
   const [totalVehicles, setTotalVehicles] = useState(0);
@@ -66,81 +66,65 @@ const VehicleTrackingDashboard = () => {
   // Sorting state and logic
   const [sortConfig, setSortConfig] = useState<{ key: keyof Vehicle | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
 
-  const handleSort = (key: keyof Vehicle) => {
+  // Optimized sort handler with useCallback
+  const handleSort = useCallback((key: keyof Vehicle) => {
     setSortConfig((prev) => {
       if (prev.key === key) {
-        // Toggle direction
         return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
       }
       return { key, direction: 'asc' };
     });
-  };
-
-  const sortedVehicles = React.useMemo(() => {
-    if (!sortConfig.key) return vehicles;
-    const key = sortConfig.key;
-    const sorted = [...vehicles].sort((a, b) => {
-      const aValue = a[key];
-      const bValue = b[key];
-      if (aValue === undefined || bValue === undefined) return 0;
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
-      }
-      return sortConfig.direction === 'asc'
-        ? String(aValue).localeCompare(String(bValue))
-        : String(bValue).localeCompare(String(aValue));
-    });
-    return sorted;
-  }, [vehicles, sortConfig]);
+  }, []);
 
   // Manual data fetching - no Redux queries
   const [storedData, setStoredData] = useState<any>(null);
   const [isLoadingStored, setIsLoadingStored] = useState(true);
   const [storedError, setStoredError] = useState<any>(null);
 
-  // Fetch all data at once
-  useEffect(() => {
-    const fetchAllData = async () => {
-      try {
-        setIsLoadingStored(true);
-        const startTime = Date.now();
-        
-        const response = await fetch('/api/vehicles/stored');
-        const data = await response.json();
-        
-        if (!data.success) {
-          throw new Error('Failed to fetch data');
-        }
-        
-        // Add unique IDs to prevent duplicate key errors
-        const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
-          ...vehicle,
-          uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${index}`
-        }));
-        
-        const totalTime = Date.now() - startTime;
-        console.log(`⚡ Frontend loaded all ${vehiclesWithIds.length} vehicles in ${totalTime}ms`);
-        
-        setStoredData({ 
-          success: true, 
-          data: vehiclesWithIds,
-          loadTime: `${totalTime}ms`
-        });
-        setLastRefreshTime(new Date());
-        setDataFreshness('Just loaded');
-        
-      } catch (error) {
-        setStoredError(error);
-      } finally {
-        setIsLoadingStored(false);
+  // Optimized data fetching with better error handling
+  const fetchAllData = useCallback(async () => {
+    try {
+      setIsLoadingStored(true);
+      const startTime = Date.now();
+      
+      const response = await fetch('/api/vehicles/stored');
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error('Failed to fetch data');
       }
-    };
-
-    fetchAllData();
+      
+      // Add unique IDs to prevent duplicate key errors
+      const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
+        ...vehicle,
+        uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${index}`
+      }));
+      
+      const totalTime = Date.now() - startTime;
+      console.log(`⚡ Frontend loaded all ${vehiclesWithIds.length} vehicles in ${totalTime}ms`);
+      
+      setStoredData({ 
+        success: true, 
+        data: vehiclesWithIds,
+        loadTime: `${totalTime}ms`
+      });
+      setLastRefreshTime(new Date());
+      setDataFreshness('Just loaded');
+      
+    } catch (error) {
+      setStoredError(error);
+    } finally {
+      setIsLoadingStored(false);
+    }
   }, []);
 
-  // Manual refetch function
-  const refetchStored = async () => {
+  // Fetch all data at once
+  useEffect(() => {
+    fetchAllData();
+  }, [fetchAllData]);
+
+  // Optimized refetch function
+  const refetchStored = useCallback(async () => {
     try {
       setIsLoadingStored(true);
       const startTime = Date.now();
@@ -172,114 +156,77 @@ const VehicleTrackingDashboard = () => {
     } finally {
       setIsLoadingStored(false);
     }
-  };
+  }, []);
 
-  // Debounce search query
+  // Optimized debounce search query with loading indicator
   useEffect(() => {
+    if (searchQuery !== debouncedSearchQuery) {
+      setIsSearching(true);
+    }
+    
     const timer = setTimeout(() => {
       setDebouncedSearchQuery(searchQuery);
+      setIsSearching(false);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  // Debug search functionality
-  useEffect(() => {
-    console.log('🔍 Search query changed:', searchQuery);
-    console.log('🔍 Debounced search query:', debouncedSearchQuery);
-    console.log('🔍 Current filters:', filters);
-  }, [searchQuery, debouncedSearchQuery, filters]);
+  }, [searchQuery, debouncedSearchQuery]);
 
   const [isFetching, setIsFetching] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const [dataFreshness, setDataFreshness] = useState<string>('');
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
 
-  // Compute filter options from stored data
-  const [filterOptions, setFilterOptions] = useState<any>(null);
-
-  // Compute filter options when data changes - optimized with useMemo
-  const computedFilterOptions = React.useMemo(() => {
+  // Optimized filter options computation - only compute when data changes
+  const filterOptions = useMemo(() => {
     if (!storedData?.data || storedData.data.length === 0) {
       return null;
     }
 
     const vehicles = storedData.data;
     
-    // Extract unique values for each filter
-    const ipOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.ip))).sort();
-    const vehicleNoOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.vehicleNo))).sort();
-    const vehicleNameOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.vehicleName))).sort();
-    const imeiNoOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.imeiNo))).sort();
-    const simNoOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.simNo))).sort();
-    const companyNameOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.companyName))).sort();
-    const branchNameOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.branchName))).sort();
-    const projectNameOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.projectName))).sort();
-    const createdDateOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.createdDate))).sort();
-    const resellerNameOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.resellerName))).sort();
-    const inActiveDaysOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.InActiveDays))).sort((a, b) => Number(a) - Number(b));
-    const adminNameOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.adminName))).sort();
-    const regionOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.region))).sort();
-    const projectIdOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.projectId))).sort();
-    const usernameOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.username))).sort();
-    const fetchedAtOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.fetchedAt).filter(Boolean))).sort();
-    const startDateOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.startDate).filter(Boolean))).sort();
-    const endDateOptions = Array.from(new Set(vehicles.map((v: Vehicle) => v.endDate).filter(Boolean))).sort();
+    // Extract unique values for each filter using Set for better performance
+    const extractUniqueValues = (key: keyof Vehicle) => {
+      const values = new Set<string>();
+      vehicles.forEach((v: Vehicle) => {
+        const value = v[key];
+        if (value !== undefined && value !== null) {
+          values.add(String(value));
+        }
+      });
+      return Array.from(values).sort();
+    };
 
     const options = {
       success: true,
       data: {
-        ip: ipOptions,
-        vehicleNo: vehicleNoOptions,
-        vehicleName: vehicleNameOptions,
-        imeiNo: imeiNoOptions,
-        simNo: simNoOptions,
-        companyName: companyNameOptions,
-        branchName: branchNameOptions,
-        projectName: projectNameOptions,
-        createdDate: createdDateOptions,
-        resellerName: resellerNameOptions,
-        InActiveDays: inActiveDaysOptions,
-        adminName: adminNameOptions,
-        region: regionOptions,
-        projectId: projectIdOptions,
-        username: usernameOptions,
-        fetchedAt: fetchedAtOptions,
-        startDate: startDateOptions,
-        endDate: endDateOptions
+        ip: extractUniqueValues('ip'),
+        vehicleNo: extractUniqueValues('vehicleNo'),
+        vehicleName: extractUniqueValues('vehicleName'),
+        imeiNo: extractUniqueValues('imeiNo'),
+        simNo: extractUniqueValues('simNo'),
+        companyName: extractUniqueValues('companyName'),
+        branchName: extractUniqueValues('branchName'),
+        projectName: extractUniqueValues('projectName'),
+        createdDate: extractUniqueValues('createdDate'),
+        resellerName: extractUniqueValues('resellerName'),
+        InActiveDays: extractUniqueValues('InActiveDays').sort((a, b) => Number(a) - Number(b)),
+        adminName: extractUniqueValues('adminName'),
+        region: extractUniqueValues('region'),
+        projectId: extractUniqueValues('projectId'),
+        username: extractUniqueValues('username'),
+        fetchedAt: extractUniqueValues('fetchedAt'),
+        startDate: extractUniqueValues('startDate'),
+        endDate: extractUniqueValues('endDate')
       },
       timestamp: new Date().toISOString(),
       source: 'computed'
     };
 
-    console.log('🔧 Filter options computed from data:', {
-      ip: ipOptions.length,
-      vehicleNo: vehicleNoOptions.length,
-      vehicleName: vehicleNameOptions.length,
-      imeiNo: imeiNoOptions.length,
-      simNo: simNoOptions.length,
-      companyName: companyNameOptions.length,
-      branchName: branchNameOptions.length,
-      projectName: projectNameOptions.length,
-      createdDate: createdDateOptions.length,
-      resellerName: resellerNameOptions.length,
-      InActiveDays: inActiveDaysOptions.length,
-      adminName: adminNameOptions.length,
-      region: regionOptions.length,
-      projectId: projectIdOptions.length,
-      username: usernameOptions.length,
-      fetchedAt: fetchedAtOptions.length,
-      startDate: startDateOptions.length,
-      endDate: endDateOptions.length
-    });
-
     return options;
   }, [storedData]);
-
-  // Update filter options state
-  useEffect(() => {
-    setFilterOptions(computedFilterOptions);
-  }, [computedFilterOptions]);
 
   // Auto-refresh data every 5 minutes
   useEffect(() => {
@@ -299,7 +246,7 @@ const VehicleTrackingDashboard = () => {
     }, 5 * 60 * 1000); // 5 minutes
 
     return () => clearInterval(interval);
-  }, [storedData]);
+  }, [storedData, refetchStored]);
 
   // Update data freshness indicator
   useEffect(() => {
@@ -326,8 +273,8 @@ const VehicleTrackingDashboard = () => {
     return () => clearInterval(interval);
   }, [lastRefreshTime]);
 
-  // Manual trigger fetch function
-  const triggerFetch = async () => {
+  // Optimized trigger fetch function
+  const triggerFetch = useCallback(async () => {
     try {
       setIsFetching(true);
       const response = await fetch('/api/cron/fetch-vehicles', { method: 'POST' });
@@ -339,18 +286,14 @@ const VehicleTrackingDashboard = () => {
       const result = await response.json();
       console.log('✅ Manual fetch completed:', result);
       
-      // Data refresh completed
-      console.log('🔄 Data refresh completed');
-      
       // Refetch the main data after manual fetch
       await refetchStored();
     } catch (error) {
       console.error('❌ Manual fetch failed:', error);
-      // Don't throw the error, just log it
     } finally {
       setIsFetching(false);
     }
-  };
+  }, [refetchStored]);
 
   // Auto-fetch data if no data is present
   useEffect(() => {
@@ -358,14 +301,12 @@ const VehicleTrackingDashboard = () => {
       console.log('📁 No vehicle data found. Auto-fetching from external API...');
       setHasAutoFetched(true);
       
-      // Trigger external API fetch
       triggerFetch()
         .then((result) => {
           console.log('✅ Auto-fetch completed successfully:', result);
         })
         .catch((error: any) => {
           console.warn('⚠️ Auto-fetch failed:', error);
-          // Don't show error to user, this is expected behavior
         });
     }
   }, [storedData, isLoadingStored, hasAutoFetched, triggerFetch]);
@@ -381,35 +322,71 @@ const VehicleTrackingDashboard = () => {
     }
   }, [storedData]);
 
-  // Client-side filtering and pagination - optimized with useMemo
-  const filteredAndPaginatedData = React.useMemo(() => {
+  // Optimized search function - pre-compute searchable text
+  const searchableVehicles = useMemo(() => {
+    return allVehicles.map(vehicle => ({
+      ...vehicle,
+      searchText: [
+        vehicle.vehicleName,
+        vehicle.vehicleNo,
+        vehicle.imeiNo,
+        vehicle.simNo,
+        vehicle.companyName,
+        vehicle.branchName,
+        vehicle.projectName,
+        vehicle.resellerName,
+        vehicle.adminName,
+        vehicle.region,
+        vehicle.projectId,
+        vehicle.username
+      ].join(' ').toLowerCase()
+    }));
+  }, [allVehicles]);
+
+  // Optimized filtering and pagination - single pass filtering
+  const filteredAndPaginatedData = useMemo(() => {
     if (allVehicles.length === 0) {
       return { vehicles: [], total: 0, totalPages: 1 };
     }
 
-    let filteredData = [...allVehicles];
+    let filteredData = searchableVehicles;
     
-    // Apply search filter
+    // Apply search filter with optimized search
     if (debouncedSearchQuery) {
       const searchLower = debouncedSearchQuery.toLowerCase();
       filteredData = filteredData.filter(vehicle =>
-        Object.values(vehicle).some((val) =>
-          String(val).toLowerCase().includes(searchLower)
-        )
+        vehicle.searchText.includes(searchLower)
       );
     }
     
-    // Apply filters for all columns
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value && value.trim() !== '') {
-        const filterValue = value.trim();
-        filteredData = filteredData.filter(vehicle => {
+    // Apply filters for all columns - optimized single pass
+    const activeFilters = Object.entries(filters).filter(([_, value]) => value && value.trim() !== '');
+    
+    if (activeFilters.length > 0) {
+      filteredData = filteredData.filter(vehicle => {
+        return activeFilters.every(([key, value]) => {
           const vehicleValue = vehicle[key as keyof Vehicle];
           if (vehicleValue === undefined || vehicleValue === null) return false;
-          return String(vehicleValue) === filterValue;
+          return String(vehicleValue) === value.trim();
         });
-      }
-    });
+      });
+    }
+    
+    // Apply sorting
+    if (sortConfig.key) {
+      const key = sortConfig.key;
+      filteredData.sort((a, b) => {
+        const aValue = a[key];
+        const bValue = b[key];
+        if (aValue === undefined || bValue === undefined) return 0;
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+        }
+        return sortConfig.direction === 'asc'
+          ? String(aValue).localeCompare(String(bValue))
+          : String(bValue).localeCompare(String(aValue));
+      });
+    }
     
     // Apply pagination
     const startIndex = (currentPage - 1) * pageSize;
@@ -421,7 +398,7 @@ const VehicleTrackingDashboard = () => {
       total: filteredData.length,
       totalPages: Math.ceil(filteredData.length / pageSize)
     };
-  }, [debouncedSearchQuery, filters, allVehicles, currentPage, pageSize]);
+  }, [searchableVehicles, debouncedSearchQuery, filters, sortConfig, currentPage]);
 
   // Update state when filtered data changes
   useEffect(() => {
@@ -437,44 +414,141 @@ const VehicleTrackingDashboard = () => {
     setCurrentPage(1);
   }, [debouncedSearchQuery, filters]);
 
-  // Handle filter changes
-  const handleFilterChange = (filterName: string, value: string) => {
+  // Optimized filter change handler
+  const handleFilterChange = useCallback((filterName: string, value: string) => {
     setFilters(prev => ({
       ...prev,
       [filterName]: value
     }));
-  };
+  }, []);
 
-  // Export filtered vehicles to Excel (client-side)
-  const exportSelectedVehicles = async () => {
-    try {
-      // Get the currently filtered data (same logic as display)
-      let filteredData = [...allVehicles];
-      
-      // Apply search filter
-      if (debouncedSearchQuery) {
-        const searchLower = debouncedSearchQuery.toLowerCase();
-        filteredData = filteredData.filter(vehicle =>
-          Object.values(vehicle).some((val) =>
-            String(val).toLowerCase().includes(searchLower)
-          )
-        );
+  // Optimized row selection handler
+  const handleRowSelect = useCallback((uniqueId: string) => {
+    setSelectedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(uniqueId)) {
+        newSet.delete(uniqueId);
+      } else {
+        newSet.add(uniqueId);
       }
-      
-      // Apply filters for all columns
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value && value.trim() !== '') {
-          const filterValue = value.trim();
-          filteredData = filteredData.filter(vehicle => {
+      return newSet;
+    });
+  }, []);
+
+  // Optimized select all handler - use filtered data directly
+  const handleSelectAll = useCallback(() => {
+    if (selectAll) {
+      setSelectedRows(new Set());
+      setSelectAll(false);
+    } else {
+      // Get all IDs from the filtered data (across all pages)
+      const allIds = new Set(
+        searchableVehicles.filter(vehicle => {
+          // Apply the same filters as the display logic
+          let shouldInclude = true;
+          
+          // Apply search filter
+          if (debouncedSearchQuery) {
+            const searchLower = debouncedSearchQuery.toLowerCase();
+            shouldInclude = shouldInclude && vehicle.searchText.includes(searchLower);
+          }
+          
+          // Apply filters for all columns
+          const activeFilters = Object.entries(filters).filter(([_, value]) => value && value.trim() !== '');
+          if (activeFilters.length > 0) {
+            shouldInclude = shouldInclude && activeFilters.every(([key, value]) => {
+              const vehicleValue = vehicle[key as keyof Vehicle];
+              if (vehicleValue === undefined || vehicleValue === null) return false;
+              return String(vehicleValue) === value.trim();
+            });
+          }
+          
+          return shouldInclude;
+        }).map(v => v.uniqueId || `${v.imeiNo}-${v.vehicleNo}`)
+      );
+      setSelectedRows(allIds);
+      setSelectAll(true);
+    }
+  }, [selectAll, searchableVehicles, debouncedSearchQuery, filters]);
+
+  // Update select all state when filtered data changes
+  useEffect(() => {
+    if (filteredAndPaginatedData.total === 0) {
+      setSelectAll(false);
+      return;
+    }
+    
+    // Get all IDs from the filtered data (across all pages)
+    const allFilteredIds = new Set(
+      searchableVehicles.filter(vehicle => {
+        // Apply the same filters as the display logic
+        let shouldInclude = true;
+        
+        // Apply search filter
+        if (debouncedSearchQuery) {
+          const searchLower = debouncedSearchQuery.toLowerCase();
+          shouldInclude = shouldInclude && vehicle.searchText.includes(searchLower);
+        }
+        
+        // Apply filters for all columns
+        const activeFilters = Object.entries(filters).filter(([_, value]) => value && value.trim() !== '');
+        if (activeFilters.length > 0) {
+          shouldInclude = shouldInclude && activeFilters.every(([key, value]) => {
             const vehicleValue = vehicle[key as keyof Vehicle];
             if (vehicleValue === undefined || vehicleValue === null) return false;
-            return String(vehicleValue) === filterValue;
+            return String(vehicleValue) === value.trim();
           });
         }
-      });
+        
+        return shouldInclude;
+      }).map(v => v.uniqueId || `${v.imeiNo}-${v.vehicleNo}`)
+    );
+    
+    const isAllSelected = allFilteredIds.size > 0 && Array.from(allFilteredIds).every(id => selectedRows.has(id));
+    setSelectAll(isAllSelected);
+  }, [filteredAndPaginatedData.total, selectedRows, searchableVehicles, debouncedSearchQuery, filters]);
+
+  // Optimized export function
+  const exportSelectedVehicles = useCallback(async () => {
+    try {
+      // Determine which data to export
+      let exportData: Vehicle[];
+      
+      if (selectedRows.size > 0) {
+        // Export only selected rows (across all pages)
+        exportData = allVehicles.filter(v => {
+          const rowId = v.uniqueId || `${v.imeiNo}-${v.vehicleNo}`;
+          return selectedRows.has(rowId);
+        });
+      } else {
+        // Export all filtered data (same logic as display)
+        let filteredData = searchableVehicles;
+        
+        // Apply search filter
+        if (debouncedSearchQuery) {
+          const searchLower = debouncedSearchQuery.toLowerCase();
+          filteredData = filteredData.filter(vehicle =>
+            vehicle.searchText.includes(searchLower)
+          );
+        }
+        
+        // Apply filters for all columns
+        const activeFilters = Object.entries(filters).filter(([_, value]) => value && value.trim() !== '');
+        if (activeFilters.length > 0) {
+          filteredData = filteredData.filter(vehicle => {
+            return activeFilters.every(([key, value]) => {
+              const vehicleValue = vehicle[key as keyof Vehicle];
+              if (vehicleValue === undefined || vehicleValue === null) return false;
+              return String(vehicleValue) === value.trim();
+            });
+          });
+        }
+        
+        exportData = filteredData;
+      }
 
       // Create export data
-      const exportData = filteredData.map((v: Vehicle) => ({
+      const exportDataFormatted = exportData.map((v: Vehicle) => ({
         "Vehicle Name": v.vehicleName,
         Reseller: v.resellerName,
         IP: v.ip,
@@ -495,12 +569,20 @@ const VehicleTrackingDashboard = () => {
         "End Date": v.endDate || "-",
       }));
 
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const worksheet = XLSX.utils.json_to_sheet(exportDataFormatted);
       const workbook = XLSX.utils.book_new();
       
-      // Use appropriate filename based on filters
-      const filename = filtersActive ? "filtered_vehicles.xlsx" : "all_vehicles.xlsx";
-      const sheetName = filtersActive ? "Filtered Vehicles" : "All Vehicles";
+      // Use appropriate filename based on selection
+      const filename = selectedRows.size > 0 
+        ? `selected_vehicles_${selectedRows.size}.xlsx` 
+        : filtersActive 
+          ? "filtered_vehicles.xlsx" 
+          : "all_vehicles.xlsx";
+      const sheetName = selectedRows.size > 0 
+        ? "Selected Vehicles" 
+        : filtersActive 
+          ? "Filtered Vehicles" 
+          : "All Vehicles";
       
       XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
       XLSX.writeFile(workbook, filename);
@@ -510,10 +592,10 @@ const VehicleTrackingDashboard = () => {
       console.error('Error exporting vehicles:', error);
       alert('Error exporting vehicles. Please try again.');
     }
-  };
+  }, [selectedRows, allVehicles, searchableVehicles, debouncedSearchQuery, filters]);
 
-  // Reset search and filters
-  const resetFilters = () => {
+  // Optimized reset filters function
+  const resetFilters = useCallback(() => {
     setSearchQuery("");
     setDebouncedSearchQuery("");
     setFilters({
@@ -536,10 +618,9 @@ const VehicleTrackingDashboard = () => {
       startDate: "",
       endDate: ""
     });
+  }, []);
 
-  };
-
-  const isLoading = isLoadingStored || isFetching || isAutoRefreshing;
+  const isLoading = isLoadingStored || isFetching || isAutoRefreshing || isSearching;
   const error = storedError;
 
   // Column visibility state
@@ -628,6 +709,94 @@ const VehicleTrackingDashboard = () => {
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + vehicles.length;
 
+  // Memoized table row component for better performance
+  const TableRow = useCallback(({ v }: { v: Vehicle }) => {
+    const rowId = v.uniqueId || `${v.imeiNo}-${v.vehicleNo}`;
+    const isSelected = selectedRows.has(rowId);
+    
+    return (
+      <tr key={rowId} className={`hover:bg-gray-50 transition-colors ${isSelected ? 'bg-blue-50' : ''}`}>
+        {/* Row Checkbox */}
+        <td className="px-4 py-2">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => handleRowSelect(rowId)}
+            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+          />
+        </td>
+        {visibleColumns.ip && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-mono">{v.ip}</td>
+        )}
+        {visibleColumns.vehicleNo && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-medium">{v.vehicleNo}</td>
+        )}
+        {visibleColumns.vehicleName && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.vehicleName}</td>
+        )}
+        {visibleColumns.imeiNo && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-mono">{v.imeiNo}</td>
+        )}
+        {visibleColumns.simNo && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-mono">{v.simNo}</td>
+        )}
+        {visibleColumns.companyName && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.companyName}</td>
+        )}
+        {visibleColumns.branchName && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.branchName}</td>
+        )}
+        {visibleColumns.projectName && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.projectName}</td>
+        )}
+        {visibleColumns.createdDate && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.createdDate}</td>
+        )}
+        {visibleColumns.resellerName && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.resellerName}</td>
+        )}
+        {visibleColumns.InActiveDays && (
+          <td className="px-4 py-2 whitespace-nowrap">
+            <span className={`inline-flex px-1 py-0.5 text-xs font-semibold rounded-full ${
+            v.InActiveDays === 0 
+              ? 'bg-green-100 text-green-800' 
+              : 'bg-red-100 text-red-800'
+          }`}>
+            {v.InActiveDays}
+          </span>
+        </td>
+        )}
+        {visibleColumns.adminName && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.adminName}</td>
+        )}
+        {visibleColumns.region && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.region}</td>
+        )}
+        {visibleColumns.projectId && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-mono">{v.projectId}</td>
+        )}
+        {visibleColumns.username && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.username}</td>
+        )}
+        {visibleColumns.fetchedAt && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
+          {v.fetchedAt ? formatDateTime(v.fetchedAt) : "-"}
+        </td>
+        )}
+        {visibleColumns.startDate && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
+          {v.startDate || "-"}
+        </td>
+        )}
+        {visibleColumns.endDate && (
+          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
+          {v.endDate || "-"}
+        </td>
+        )}
+      </tr>
+    );
+  }, [selectedRows, handleRowSelect, visibleColumns]);
+
   return (
     <div className="h-full bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex flex-col">
       {/* Header */}
@@ -693,17 +862,33 @@ const VehicleTrackingDashboard = () => {
             <div className="flex-1 flex items-center gap-4">
               <div className="relative flex-1 max-w-md">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+                  {isSearching ? (
+                    <svg className="h-5 w-5 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  )}
                 </div>
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search vehicles by name, number, IMEI..."
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/50 backdrop-blur-sm"
+                  placeholder={isSearching ? "Searching..." : "Search vehicles by name, number, IMEI..."}
+                  className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/50 backdrop-blur-sm transition-all duration-200 ${
+                    isSearching ? 'border-blue-300 bg-blue-50/30' : 'border-gray-300'
+                  }`}
                 />
+                {isSearching && (
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <div className="text-xs text-blue-600 font-medium animate-pulse">
+                      Searching...
+                    </div>
+                  </div>
+                )}
               </div>
               
 
@@ -717,6 +902,18 @@ const VehicleTrackingDashboard = () => {
                 </svg>
                 Reset
               </button>
+
+              {selectedRows.size > 0 && (
+                <button
+                  onClick={() => setSelectedRows(new Set())}
+                  className="px-4 py-3 bg-red-100 text-red-700 rounded-xl hover:bg-red-200 transition-all duration-200 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Clear Selection ({selectedRows.size})
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap gap-3">
               <button
@@ -781,9 +978,11 @@ const VehicleTrackingDashboard = () => {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                {filtersActive
-                  ? `Export Filtered (${totalVehicles.toLocaleString()})`
-                  : `Export All (${totalVehicles.toLocaleString()})`
+                {selectedRows.size > 0
+                  ? `Export Selected (${selectedRows.size})`
+                  : filtersActive
+                    ? `Export Filtered (${totalVehicles.toLocaleString()})`
+                    : `Export All (${totalVehicles.toLocaleString()})`
                 }
               </button>
 
@@ -793,6 +992,29 @@ const VehicleTrackingDashboard = () => {
         </div>
 
 
+
+        {/* Search Results Indicator */}
+        {debouncedSearchQuery && (
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200/50 rounded-2xl p-4 mb-4 backdrop-blur-sm">
+            <div className="flex items-center gap-3 text-sm">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <span className="font-semibold text-green-900">Search Results:</span>
+              <span className="text-green-700">
+                "{debouncedSearchQuery}" found {totalVehicles.toLocaleString()} vehicles
+              </span>
+              {isSearching && (
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-green-600 text-xs">Searching...</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Filter Summary */}
         {Object.values(filters).some(f => f && f.trim() !== '') && (
@@ -868,6 +1090,20 @@ const VehicleTrackingDashboard = () => {
             <table className="min-w-full divide-y divide-gray-200/50" style={{ minWidth: '2800px' }}>
               <thead className="bg-gradient-to-r from-gray-50 to-gray-100 sticky top-0 z-10 backdrop-blur-sm">
                 <tr>
+                  {/* Select All Checkbox */}
+                  <th className="px-4 py-2 text-left">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={selectAll}
+                        onChange={handleSelectAll}
+                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                      />
+                      <span className="ml-2 text-xs text-gray-600 font-medium">
+                        {selectedRows.size > 0 ? `${selectedRows.size} selected` : `Select All (${filteredAndPaginatedData.total.toLocaleString()})`}
+                      </span>
+                    </div>
+                  </th>
                   {visibleColumns.ip && (
                     <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       <div className="flex flex-col gap-1">
@@ -976,9 +1212,9 @@ const VehicleTrackingDashboard = () => {
                           className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         >
                           <option value="">All IMEIs</option>
-                          {filterOptions?.data?.imeiNo?.map((imeiNo: number) => (
-                            <option key={imeiNo} value={imeiNo}>{imeiNo}</option>
-                          ))}
+                                                  {filterOptions?.data?.imeiNo?.map((imeiNo: string) => (
+                          <option key={imeiNo} value={imeiNo}>{imeiNo}</option>
+                        ))}
                         </select>
                       </div>
                   </th>
@@ -1159,7 +1395,7 @@ const VehicleTrackingDashboard = () => {
                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                       >
                         <option value="">All Days</option>
-                        {filterOptions?.data?.InActiveDays?.map((inActiveDays: number) => (
+                        {filterOptions?.data?.InActiveDays?.map((inActiveDays: string) => (
                           <option key={inActiveDays} value={inActiveDays}>{inActiveDays}</option>
                         ))}
                       </select>
@@ -1357,84 +1593,13 @@ const VehicleTrackingDashboard = () => {
                       <div className="flex flex-col items-center justify-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
                         <span className="text-gray-600">
-                          {isFetching ? "Fetching vehicle data..." : "Loading vehicles..."}
+                          {isFetching ? "Fetching vehicle data..." : isSearching ? "Searching vehicles..." : "Loading vehicles..."}
                         </span>
                       </div>
                     </td>
                   </tr>
-                ) : sortedVehicles.length > 0 ? (
-                  sortedVehicles.map((v) => (
-                    <tr key={v.uniqueId || `${v.imeiNo}-${v.vehicleNo}`} className="hover:bg-gray-50 transition-colors">
-                      {visibleColumns.ip && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-mono">{v.ip}</td>
-                      )}
-                      {visibleColumns.vehicleNo && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-medium">{v.vehicleNo}</td>
-                      )}
-                      {visibleColumns.vehicleName && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.vehicleName}</td>
-                      )}
-                      {visibleColumns.imeiNo && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-mono">{v.imeiNo}</td>
-                      )}
-                      {visibleColumns.simNo && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-mono">{v.simNo}</td>
-                      )}
-                      {visibleColumns.companyName && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.companyName}</td>
-                      )}
-                      {visibleColumns.branchName && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.branchName}</td>
-                      )}
-                      {visibleColumns.projectName && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.projectName}</td>
-                      )}
-                      {visibleColumns.createdDate && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.createdDate}</td>
-                      )}
-                      {visibleColumns.resellerName && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.resellerName}</td>
-                      )}
-                      {visibleColumns.InActiveDays && (
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          <span className={`inline-flex px-1 py-0.5 text-xs font-semibold rounded-full ${
-                          v.InActiveDays === 0 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {v.InActiveDays}
-                        </span>
-                      </td>
-                      )}
-                      {visibleColumns.adminName && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.adminName}</td>
-                      )}
-                      {visibleColumns.region && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.region}</td>
-                      )}
-                      {visibleColumns.projectId && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 font-mono">{v.projectId}</td>
-                      )}
-                      {visibleColumns.username && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.username}</td>
-                      )}
-                      {visibleColumns.fetchedAt && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
-                        {v.fetchedAt ? formatDateTime(v.fetchedAt) : "-"}
-                      </td>
-                      )}
-                      {visibleColumns.startDate && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
-                        {v.startDate || "-"}
-                      </td>
-                      )}
-                      {visibleColumns.endDate && (
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
-                        {v.endDate || "-"}
-                      </td>
-                      )}
-                    </tr>
-                  ))
+                                 ) : filteredAndPaginatedData.vehicles.length > 0 ? (
+                   filteredAndPaginatedData.vehicles.map((vehicle) => <TableRow key={vehicle.uniqueId || `${vehicle.imeiNo}-${vehicle.vehicleNo}`} v={vehicle} />)
                 ) : (
                   <tr>
                     <td colSpan={19} className="px-6 py-12 text-center">
