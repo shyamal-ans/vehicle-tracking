@@ -311,6 +311,46 @@ const VehicleTrackingDashboard = () => {
     }
   }, [storedData, isLoadingStored, hasAutoFetched, triggerFetch]);
 
+  // Listen for reseller changes from header component and sync from localStorage
+  useEffect(() => {
+    const handleResellerChange = (event: CustomEvent) => {
+      const selectedReseller = event.detail?.reseller;
+      if (selectedReseller && selectedReseller.name !== "All Resellers") {
+        setFilters(prev => ({
+          ...prev,
+          resellerName: selectedReseller.name
+        }));
+      } else {
+        setFilters(prev => ({
+          ...prev,
+          resellerName: ""
+        }));
+      }
+    };
+
+    // Check localStorage for existing reseller selection
+    const storedReseller = localStorage.getItem('selectedReseller');
+    if (storedReseller) {
+      try {
+        const parsedReseller = JSON.parse(storedReseller);
+        if (parsedReseller && parsedReseller.name !== "All Resellers") {
+          setFilters(prev => ({
+            ...prev,
+            resellerName: parsedReseller.name
+          }));
+        }
+      } catch (error) {
+        console.warn('Error parsing stored reseller:', error);
+      }
+    }
+
+    window.addEventListener('resellerChanged', handleResellerChange as EventListener);
+    
+    return () => {
+      window.removeEventListener('resellerChanged', handleResellerChange as EventListener);
+    };
+  }, []);
+
   // Store all data and apply client-side filtering
   const [allVehicles, setAllVehicles] = useState<Vehicle[]>([]);
 
@@ -640,9 +680,7 @@ const VehicleTrackingDashboard = () => {
     region: true,
     projectId: true,
     username: true,
-    fetchedAt: true,
-    startDate: true,
-    endDate: true
+
   });
 
   const [showColumnSelector, setShowColumnSelector] = useState(false);
@@ -661,7 +699,7 @@ const VehicleTrackingDashboard = () => {
       ip: true, vehicleNo: true, vehicleName: true, imeiNo: true, simNo: true,
       companyName: true, branchName: true, projectName: true, createdDate: true,
       resellerName: true, InActiveDays: true, adminName: true, region: true,
-      projectId: true, username: true, fetchedAt: true, startDate: true, endDate: true
+      projectId: true, username: true, 
     });
   }, []);
 
@@ -670,7 +708,7 @@ const VehicleTrackingDashboard = () => {
       ip: false, vehicleNo: false, vehicleName: false, imeiNo: false, simNo: false,
       companyName: false, branchName: false, projectName: false, createdDate: false,
       resellerName: false, InActiveDays: false, adminName: false, region: false,
-      projectId: false, username: false, fetchedAt: false, startDate: false, endDate: false
+      projectId: false, username: false,
     });
   }, []);
 
@@ -691,10 +729,7 @@ const VehicleTrackingDashboard = () => {
     { key: 'region', label: 'Region' },
     { key: 'projectId', label: 'Project ID' },
     { key: 'username', label: 'Username' },
-    { key: 'fetchedAt', label: 'Fetched At' },
-    { key: 'startDate', label: 'Start Date' },
-    { key: 'endDate', label: 'End Date' }
-  ], []);
+     ], []);
 
   // Memoized visible columns count
   const visibleColumnsCount = useMemo(() => 
@@ -778,21 +813,9 @@ const VehicleTrackingDashboard = () => {
         {visibleColumns.username && (
           <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{v.username}</td>
         )}
-        {visibleColumns.fetchedAt && (
-          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
-          {v.fetchedAt ? formatDateTime(v.fetchedAt) : "-"}
-        </td>
-        )}
-        {visibleColumns.startDate && (
-          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
-          {v.startDate || "-"}
-        </td>
-        )}
-        {visibleColumns.endDate && (
-          <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
-          {v.endDate || "-"}
-        </td>
-        )}
+       
+        
+      
       </tr>
     );
   }, [selectedRows, handleRowSelect, visibleColumns]);
@@ -836,7 +859,7 @@ const VehicleTrackingDashboard = () => {
               
               <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600 bg-gray-100 px-3 py-2 rounded-lg">
                 <div className={`w-2 h-2 rounded-full ${isAutoRefreshing ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
-                {isAutoRefreshing ? 'Refreshing...' : dataFreshness ? `Updated ${dataFreshness}` : 'Live Data'}
+                {isAutoRefreshing ? 'Refreshing...' : lastRefreshTime ? `Last updated: ${formatDateTime(lastRefreshTime.toISOString())}` : 'Live Data'}
               </div>
               <a
                 href="/"
@@ -1085,9 +1108,10 @@ const VehicleTrackingDashboard = () => {
         )}
 
         {/* Vehicle Table */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-200/50 overflow-hidden">
-          <div className="overflow-x-auto" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-            <table className="min-w-full divide-y divide-gray-200/50" style={{ minWidth: '2800px' }}>
+        {visibleColumnsCount > 0 ? (
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-200/50 overflow-hidden">
+            <div className="overflow-x-auto" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              <table className="min-w-full divide-y divide-gray-200/50" style={{ minWidth: `${(visibleColumnsCount + 1) * 150}px` }}>
               <thead className="bg-gradient-to-r from-gray-50 to-gray-100 sticky top-0 z-10 backdrop-blur-sm">
                 <tr>
                   {/* Select All Checkbox */}
@@ -1137,31 +1161,19 @@ const VehicleTrackingDashboard = () => {
                   )}
                   {visibleColumns.vehicleNo && (
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      <div className="flex flex-col gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('vehicleNo')}
-                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
-                    >
-                      VEHICLE NO
-                      {sortConfig.key === 'vehicleNo' && (
-                        <span className="text-blue-600">
-                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                        </span>
-                      )}
-                    </button>
-                        <select
-                          value={filters.vehicleNo}
-                          onChange={(e) => handleFilterChange("vehicleNo", e.target.value)}
-                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="">All Vehicle Nos</option>
-                          {filterOptions?.data?.vehicleNo?.map((vehicleNo: string) => (
-                            <option key={vehicleNo} value={vehicleNo}>{vehicleNo}</option>
-                          ))}
-                        </select>
-                      </div>
-                  </th>
+                      <button
+                        type="button"
+                        onClick={() => handleSort('vehicleNo')}
+                        className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
+                      >
+                        VEHICLE NO
+                        {sortConfig.key === 'vehicleNo' && (
+                          <span className="text-blue-600">
+                            {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                          </span>
+                        )}
+                      </button>
+                    </th>
                   )}
                   {visibleColumns.vehicleName && (
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1219,8 +1231,9 @@ const VehicleTrackingDashboard = () => {
                       </div>
                   </th>
                   )}
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  {visibleColumns.simNo && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('simNo')}
@@ -1245,8 +1258,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.companyName && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('companyName')}
@@ -1271,8 +1286,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.branchName && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('branchName')}
@@ -1297,8 +1314,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.projectName && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('projectName')}
@@ -1323,8 +1342,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.createdDate && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('createdDate')}
@@ -1349,8 +1370,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.resellerName && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('resellerName')}
@@ -1375,8 +1398,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.InActiveDays && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('InActiveDays')}
@@ -1401,8 +1426,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.adminName && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('adminName')}
@@ -1427,8 +1454,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.region && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('region')}
@@ -1453,8 +1482,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.projectId && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('projectId')}
@@ -1479,8 +1510,10 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
+                  )}
+                  {visibleColumns.username && (
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex flex-col gap-1">
                     <button
                       type="button"
                       onClick={() => handleSort('username')}
@@ -1505,91 +1538,15 @@ const VehicleTrackingDashboard = () => {
                       </select>
                     </div>
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('fetchedAt')}
-                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
-                    >
-                      FETCHED AT
-                      {sortConfig.key === 'fetchedAt' && (
-                        <span className="text-blue-600">
-                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                        </span>
-                      )}
-                    </button>
-                      <select
-                        value={filters.fetchedAt}
-                        onChange={(e) => handleFilterChange("fetchedAt", e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">All Fetched Dates</option>
-                        {filterOptions?.data?.fetchedAt?.map((fetchedAt: string) => (
-                          <option key={fetchedAt} value={fetchedAt}>{fetchedAt}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('startDate')}
-                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
-                    >
-                      START DATE
-                      {sortConfig.key === 'startDate' && (
-                        <span className="text-blue-600">
-                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                        </span>
-                      )}
-                    </button>
-                      <select
-                        value={filters.startDate}
-                        onChange={(e) => handleFilterChange("startDate", e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">All Start Dates</option>
-                        {filterOptions?.data?.startDate?.map((startDate: string) => (
-                          <option key={startDate} value={startDate}>{startDate}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex flex-col gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('endDate')}
-                      className="flex items-center gap-1 group focus:outline-none hover:text-gray-700 transition-colors"
-                    >
-                      END DATE
-                      {sortConfig.key === 'endDate' && (
-                        <span className="text-blue-600">
-                          {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                        </span>
-                      )}
-                    </button>
-                      <select
-                        value={filters.endDate}
-                        onChange={(e) => handleFilterChange("endDate", e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">All End Dates</option>
-                        {filterOptions?.data?.endDate?.map((endDate: string) => (
-                          <option key={endDate} value={endDate}>{endDate}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </th>
+                  )}
+                
                 </tr>
               </thead>
 
               <tbody className="bg-white divide-y divide-gray-200">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={19} className="px-6 py-12 text-center">
+                    <td colSpan={visibleColumnsCount + 1} className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
                         <span className="text-gray-600">
@@ -1602,7 +1559,7 @@ const VehicleTrackingDashboard = () => {
                    filteredAndPaginatedData.vehicles.map((vehicle) => <TableRow key={vehicle.uniqueId || `${vehicle.imeiNo}-${vehicle.vehicleNo}`} v={vehicle} />)
                 ) : (
                   <tr>
-                    <td colSpan={19} className="px-6 py-12 text-center">
+                    <td colSpan={visibleColumnsCount + 1} className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <svg className="w-12 h-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM21 17a2 2 0 11-4 0 2 2 0 014 0zM21 13V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6m18 0v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m18 0h-2M3 13h2m13-8V5a2 2 0 00-2-2H9a2 2 0 00-2 2v1" />
@@ -1686,6 +1643,23 @@ const VehicleTrackingDashboard = () => {
             </div>
           </div>
         </div>
+        ) : (
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-200/50 p-12 text-center">
+            <div className="flex flex-col items-center justify-center">
+              <svg className="w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              </svg>
+              <h3 className="text-xl font-semibold text-gray-700 mb-2">No Columns Selected</h3>
+              <p className="text-gray-500 mb-4">Please select at least one column to display the vehicle data.</p>
+              <button
+                onClick={() => setShowColumnSelector(true)}
+                className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+              >
+                Select Columns
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
 
