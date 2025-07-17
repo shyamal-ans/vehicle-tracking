@@ -68,7 +68,7 @@ const PieChart = ({ data, title, colors }: { data: { label: string; value: numbe
           </svg>
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <div className="text-4xl font-black text-gray-900">{total}</div>
+              <div className="text-4xl font-black text-gray-900">{total.toLocaleString()}</div>
               <div className="text-sm text-gray-600 font-semibold">Total</div>
             </div>
           </div>
@@ -85,7 +85,7 @@ const PieChart = ({ data, title, colors }: { data: { label: string; value: numbe
               <span className="font-semibold text-gray-800 text-lg">{item.label}</span>
             </div>
             <div className="text-right">
-              <div className="font-black text-gray-900 text-xl">{item.value}</div>
+              <div className="font-black text-gray-900 text-xl">{item.value.toLocaleString()}</div>
               <div className="text-xs text-gray-600 font-medium">{(item.value / total * 100).toFixed(1)}%</div>
             </div>
           </div>
@@ -248,7 +248,7 @@ const StatusDistribution = ({ vehicles }: { vehicles: Vehicle[] }) => {
           </svg>
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <div className="text-4xl font-black text-gray-900">{vehicles.length}</div>
+              <div className="text-4xl font-black text-gray-900">{vehicles.length.toLocaleString()}</div>
               <div className="text-sm text-gray-600 font-semibold">Total</div>
             </div>
           </div>
@@ -265,7 +265,7 @@ const StatusDistribution = ({ vehicles }: { vehicles: Vehicle[] }) => {
               <span className="font-semibold text-gray-800 text-lg">{item.label}</span>
             </div>
             <div className="text-right">
-              <div className="font-black text-gray-900 text-xl">{item.value}</div>
+              <div className="font-black text-gray-900 text-xl">{item.value.toLocaleString()}</div>
               <div className="text-xs text-gray-600 font-medium">{((item.value / vehicles.length) * 100).toFixed(1)}%</div>
             </div>
           </div>
@@ -278,6 +278,8 @@ const StatusDistribution = ({ vehicles }: { vehicles: Vehicle[] }) => {
 const AnalyticsDashboard = () => {
   const [allVehicles, setAllVehicles] = useState<Vehicle[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedReseller, setSelectedReseller] = useState<string>('');
+  const [resellerOptions, setResellerOptions] = useState<string[]>([]);
 
   // Fetch all vehicles for analytics
   useEffect(() => {
@@ -288,6 +290,15 @@ const AnalyticsDashboard = () => {
         const data = await response.json();
         if (data.success) {
           setAllVehicles(data.data);
+          
+          // Extract unique resellers for dropdown
+          const uniqueResellers = Array.from(
+            new Set(data.data.map((vehicle: Vehicle) => vehicle.resellerName))
+          )
+            .filter((resellerName): resellerName is string => Boolean(resellerName))
+            .sort();
+          
+          setResellerOptions(uniqueResellers);
         }
     } catch (error) {
         console.error('Error fetching data for analytics:', error);
@@ -336,14 +347,19 @@ const AnalyticsDashboard = () => {
     );
   }
 
+  // Filter vehicles by selected reseller
+  const filteredVehicles = selectedReseller 
+    ? allVehicles.filter(v => v.resellerName === selectedReseller)
+    : allVehicles;
+
   // Calculate analytics
-  const totalVehicles = allVehicles.length;
-  const activeVehicles = allVehicles.filter(v => v.InActiveDays === 0).length;
+  const totalVehicles = filteredVehicles.length;
+  const activeVehicles = filteredVehicles.filter(v => v.InActiveDays === 0).length;
   const inactiveVehicles = totalVehicles - activeVehicles;
   
   // Company distribution
   const companyStats = Object.entries(
-    allVehicles.reduce((acc, v) => {
+    filteredVehicles.reduce((acc, v) => {
       acc[v.companyName] = (acc[v.companyName] || 0) + 1;
       return acc;
     }, {} as Record<string, number>)
@@ -354,7 +370,7 @@ const AnalyticsDashboard = () => {
 
   // Reseller distribution
   const resellerStats = Object.entries(
-    allVehicles.reduce((acc, v) => {
+    filteredVehicles.reduce((acc, v) => {
       acc[v.resellerName] = (acc[v.resellerName] || 0) + 1;
       return acc;
     }, {} as Record<string, number>)
@@ -365,7 +381,7 @@ const AnalyticsDashboard = () => {
 
   // Project distribution
   const projectStats = Object.entries(
-    allVehicles.reduce((acc, v) => {
+    filteredVehicles.reduce((acc, v) => {
       acc[v.projectName] = (acc[v.projectName] || 0) + 1;
       return acc;
     }, {} as Record<string, number>)
@@ -375,7 +391,7 @@ const AnalyticsDashboard = () => {
 
   // Server distribution
   const serverStats = Object.entries(
-    allVehicles.reduce((acc, v) => {
+    filteredVehicles.reduce((acc, v) => {
       acc[v.ip] = (acc[v.ip] || 0) + 1;
       return acc;
     }, {} as Record<string, number>)
@@ -390,47 +406,70 @@ const AnalyticsDashboard = () => {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl shadow-xl p-8 mb-8 border border-blue-200">
-          <div className="flex items-center justify-between">
-                <div>
-              <h1 className="text-5xl font-black bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
+          {/* Main Header Row */}
+          <div className="flex items-start justify-between mb-6">
+            <div className="flex-1">
+              <h1 className="text-5xl font-black bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent mb-3">
                 Vehicle Analytics Dashboard
               </h1>
-              <p className="text-gray-600 mt-3 text-xl font-medium">Comprehensive insights into your vehicle fleet with real-time data</p>
-              <div className="flex items-center gap-6 mt-6">
-                <div className="flex items-center gap-3 text-sm text-gray-600 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200">
-                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                  Last updated: {formatDateTime(new Date().toISOString())}
-                </div>
-                <div className="flex items-center gap-3 text-sm text-gray-600 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200">
-                  <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                  {allVehicles.length.toLocaleString()} Total Records
-                </div>
-                </div>
-                </div>
+              <p className="text-gray-600 text-xl font-medium">Comprehensive insights into your vehicle fleet with real-time data</p>
+            </div>
+            
+            <div className="flex items-center gap-4 ml-8">
+              {/* Reseller Dropdown */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Reseller:</span>
+                <select
+                  value={selectedReseller}
+                  onChange={(e) => setSelectedReseller(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/90 backdrop-blur-sm min-w-[200px] text-sm font-medium"
+                >
+                  <option value="">All Resellers</option>
+                  {resellerOptions.map((resellerName: string) => (
+                    <option key={resellerName} value={resellerName}>{resellerName}</option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* View Vehicle Tables Button */}
+              <a 
+                href="/vehicle-table" 
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 flex items-center gap-2 whitespace-nowrap"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM21 17a2 2 0 11-4 0 2 2 0 014 0zM21 13V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6m18 0v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m18 0h-2M3 13h2m13-8V5a2 2 0 00-2-2H9a2 2 0 00-2 2v1" />
+                </svg>
+                View Tables
+              </a>
+            </div>
+          </div>
+          
+          {/* Stats Row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3 text-sm text-gray-600 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200">
+                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                Last updated: {formatDateTime(new Date().toISOString())}
+              </div>
+              <div className="flex items-center gap-3 text-sm text-gray-600 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200">
+                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                {allVehicles.length.toLocaleString()} Total Records
+              </div>
+            </div>
+            
             <div className="text-right">
               <div className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 mb-2">
                 {totalVehicles.toLocaleString()}
-                </div>
+              </div>
               <div className="text-xl text-gray-600 font-semibold">Total Vehicles</div>
               <div className="text-sm text-green-600 font-medium mt-2 bg-green-100 px-3 py-1 rounded-full">
-                {activeVehicles} Active • {inactiveVehicles} Inactive
+                {activeVehicles.toLocaleString()} Active • {inactiveVehicles.toLocaleString()} Inactive
               </div>
             </div>
           </div>
         </div>
 
-        {/* Navigation Button */}
-        <div className="flex justify-center mb-8">
-          <a 
-            href="/vehicle-table" 
-            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-4 px-8 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 flex items-center gap-3"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM21 17a2 2 0 11-4 0 2 2 0 014 0zM21 13V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6m18 0v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m18 0h-2M3 13h2m13-8V5a2 2 0 00-2-2H9a2 2 0 00-2 2v1" />
-              </svg>
-            View Vehicle Tables
-          </a>
-            </div>
+
 
         {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
@@ -468,7 +507,7 @@ const AnalyticsDashboard = () => {
           />
           <StatCard
             title="Unique Companies"
-            value={new Set(allVehicles.map(v => v.companyName)).size}
+            value={new Set(allVehicles.map(v => v.companyName)).size.toLocaleString()}
             icon={
               <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -481,7 +520,7 @@ const AnalyticsDashboard = () => {
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12">
           {/* Status Distribution */}
-          <StatusDistribution vehicles={allVehicles} />
+          <StatusDistribution vehicles={filteredVehicles} />
 
           {/* Reseller Distribution */}
           <PieChart
@@ -526,17 +565,17 @@ const AnalyticsDashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
           <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all duration-500">
             <h3 className="text-xl font-black text-blue-600 mb-4">Unique Regions</h3>
-            <div className="text-5xl font-black text-gray-900 mb-3">{new Set(allVehicles.map(v => v.region)).size}</div>
+            <div className="text-5xl font-black text-gray-900 mb-3">{new Set(filteredVehicles.map(v => v.region)).size.toLocaleString()}</div>
             <p className="text-gray-600 text-lg font-medium">Geographic coverage</p>
               </div>
           <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all duration-500">
             <h3 className="text-xl font-black text-green-600 mb-4">Unique Projects</h3>
-            <div className="text-5xl font-black text-gray-900 mb-3">{new Set(allVehicles.map(v => v.projectName)).size}</div>
+            <div className="text-5xl font-black text-gray-900 mb-3">{new Set(filteredVehicles.map(v => v.projectName)).size.toLocaleString()}</div>
             <p className="text-gray-600 text-lg font-medium">Active projects</p>
             </div>
           <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all duration-500">
             <h3 className="text-xl font-black text-purple-600 mb-4">Unique Servers</h3>
-            <div className="text-5xl font-black text-gray-900 mb-3">{new Set(allVehicles.map(v => v.ip)).size}</div>
+            <div className="text-5xl font-black text-gray-900 mb-3">{new Set(allVehicles.map(v => v.ip)).size.toLocaleString()}</div>
             <p className="text-gray-600 text-lg font-medium">Server infrastructure</p>
           </div>
         </div>

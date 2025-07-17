@@ -126,6 +126,8 @@ const VehicleTrackingDashboard = () => {
           data: vehiclesWithIds,
           loadTime: `${totalTime}ms`
         });
+        setLastRefreshTime(new Date());
+        setDataFreshness('Just loaded');
         
       } catch (error) {
         setStoredError(error);
@@ -163,6 +165,8 @@ const VehicleTrackingDashboard = () => {
         data: vehiclesWithIds,
         loadTime: `${totalTime}ms`
       });
+      setLastRefreshTime(new Date());
+      setDataFreshness('Just refreshed');
     } catch (error) {
       setStoredError(error);
     } finally {
@@ -187,6 +191,9 @@ const VehicleTrackingDashboard = () => {
   }, [searchQuery, debouncedSearchQuery, filters]);
 
   const [isFetching, setIsFetching] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
+  const [dataFreshness, setDataFreshness] = useState<string>('');
 
   // Compute filter options from stored data
   const [filterOptions, setFilterOptions] = useState<any>(null);
@@ -273,6 +280,51 @@ const VehicleTrackingDashboard = () => {
   useEffect(() => {
     setFilterOptions(computedFilterOptions);
   }, [computedFilterOptions]);
+
+  // Auto-refresh data every 5 minutes
+  useEffect(() => {
+    if (!storedData?.data || storedData.data.length === 0) return;
+
+    const interval = setInterval(async () => {
+      console.log('🔄 Auto-refreshing data...');
+      setIsAutoRefreshing(true);
+      try {
+        await refetchStored();
+        setDataFreshness('Auto-refreshed');
+      } catch (error) {
+        console.error('Auto-refresh failed:', error);
+      } finally {
+        setIsAutoRefreshing(false);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(interval);
+  }, [storedData]);
+
+  // Update data freshness indicator
+  useEffect(() => {
+    if (!lastRefreshTime) return;
+
+    const updateFreshness = () => {
+      const now = new Date();
+      const diffInSeconds = Math.floor((now.getTime() - lastRefreshTime.getTime()) / 1000);
+      
+      if (diffInSeconds < 60) {
+        setDataFreshness(`${diffInSeconds}s ago`);
+      } else if (diffInSeconds < 3600) {
+        const minutes = Math.floor(diffInSeconds / 60);
+        setDataFreshness(`${minutes}m ago`);
+      } else {
+        const hours = Math.floor(diffInSeconds / 3600);
+        setDataFreshness(`${hours}h ago`);
+      }
+    };
+
+    updateFreshness();
+    const interval = setInterval(updateFreshness, 10000); // Update every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [lastRefreshTime]);
 
   // Manual trigger fetch function
   const triggerFetch = async () => {
@@ -487,7 +539,7 @@ const VehicleTrackingDashboard = () => {
 
   };
 
-  const isLoading = isLoadingStored || isFetching;
+  const isLoading = isLoadingStored || isFetching || isAutoRefreshing;
   const error = storedError;
 
   // Column visibility state
@@ -593,14 +645,29 @@ const VehicleTrackingDashboard = () => {
                   Vehicle Tracking Dashboard
                 </h1>
                 <p className="text-sm text-gray-600 mt-1">
-                  {totalVehicles} vehicles 
+                  {totalVehicles.toLocaleString()} vehicles 
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
+              {/* Reseller Dropdown in Header */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Reseller:</span>
+                <select
+                  value={filters.resellerName}
+                  onChange={(e) => handleFilterChange("resellerName", e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 backdrop-blur-sm min-w-[180px] text-sm"
+                >
+                  <option value="">All Resellers</option>
+                  {filterOptions?.data?.resellerName?.map((resellerName: string) => (
+                    <option key={resellerName} value={resellerName}>{resellerName}</option>
+                  ))}
+                </select>
+              </div>
+              
               <div className="hidden sm:flex items-center gap-2 text-sm text-gray-600 bg-gray-100 px-3 py-2 rounded-lg">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                Live Data
+                <div className={`w-2 h-2 rounded-full ${isAutoRefreshing ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`}></div>
+                {isAutoRefreshing ? 'Refreshing...' : dataFreshness ? `Updated ${dataFreshness}` : 'Live Data'}
               </div>
               <a
                 href="/"
@@ -638,6 +705,9 @@ const VehicleTrackingDashboard = () => {
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/50 backdrop-blur-sm"
                 />
               </div>
+              
+
+              
               <button
                 onClick={resetFilters}
                 className="px-4 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-200 flex items-center gap-2"
@@ -649,6 +719,24 @@ const VehicleTrackingDashboard = () => {
               </button>
             </div>
             <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => refetchStored()}
+                disabled={isAutoRefreshing}
+                className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              >
+                {isAutoRefreshing ? (
+                  <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                )}
+                {isAutoRefreshing ? "Refreshing..." : "Refresh Now"}
+              </button>
+
               <button
                 onClick={() => triggerFetch()}
                 disabled={isFetching}
@@ -672,7 +760,7 @@ const VehicleTrackingDashboard = () => {
                   ? "Fetching..." 
                   : allVehicles.length === 0 
                     ? "Fetch Data" 
-                    : "Refresh Data"
+                    : "Fetch Fresh Data"
                 }
               </button>
 
@@ -694,8 +782,8 @@ const VehicleTrackingDashboard = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 {filtersActive
-                  ? `Export Filtered (${totalVehicles})`
-                  : `Export All (${totalVehicles})`
+                  ? `Export Filtered (${totalVehicles.toLocaleString()})`
+                  : `Export All (${totalVehicles.toLocaleString()})`
                 }
               </button>
 
@@ -725,14 +813,34 @@ const VehicleTrackingDashboard = () => {
                   ) : null
                 )}
               </div>
-              <span className="text-blue-700 font-bold text-lg">({totalVehicles} vehicles)</span>
+              <span className="text-blue-700 font-bold text-lg">({totalVehicles.toLocaleString()} vehicles)</span>
             </div>
           </div>
         )}
 
 
 
-        {/* Loading and Error Display */}
+        {/* Data Freshness and Loading Display */}
+        
+        {isAutoRefreshing && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-2xl p-4 mb-4 backdrop-blur-sm">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-100 rounded-xl">
+                <svg className="w-6 h-6 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-blue-900 font-semibold text-lg">
+                  🔄 Refreshing vehicle data...
+                </p>
+                <p className="text-blue-700 text-sm mt-1">
+                  Auto-refreshing data to ensure you have the latest information
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200/50 rounded-2xl p-4 mb-4 backdrop-blur-sm">
@@ -1348,7 +1456,7 @@ const VehicleTrackingDashboard = () => {
           <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="text-sm text-gray-700">
-                Showing {startIndex + 1}-{endIndex} of {totalVehicles} vehicles
+                Showing {startIndex + 1}-{endIndex} of {totalVehicles.toLocaleString()} vehicles
               </div>
               
               <div className="flex items-center gap-2">
