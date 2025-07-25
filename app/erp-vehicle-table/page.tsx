@@ -236,6 +236,15 @@ const ErpVehicleTrackingDashboard = () => {
     return options;
   }, [storedData]);
 
+  // Calculate unique resellers count
+  const uniqueResellersCount = useMemo(() => {
+    if (!storedData?.data || storedData.data.length === 0) {
+      return 0;
+    }
+    const uniqueResellers = new Set(storedData.data.map((v: ErpVehicle) => v.Reseller));
+    return uniqueResellers.size;
+  }, [storedData]);
+
   // Auto-refresh data every 5 minutes
   useEffect(() => {
     if (!storedData?.data || storedData.data.length === 0) return;
@@ -464,14 +473,17 @@ const ErpVehicleTrackingDashboard = () => {
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
                       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">ERP Vehicle Tracking Dashboard</h1>
-                <p className="text-gray-600 mt-1">
-                  {totalVehicles.toLocaleString()} vehicles • Last updated: {dataFreshness}
-                  {isAutoRefreshing && <span className="ml-2 text-blue-600">🔄 Auto-refreshing...</span>}
-                  {isFetching && <span className="ml-2 text-blue-600">🔄 Fetching from ERP API...</span>}
-                </p>
-              </div>
+                          <div>
+              <h1 className="text-2xl font-bold text-gray-900">ERP Vehicle Tracking Dashboard</h1>
+              <p className="text-gray-600 mt-1">
+                {totalVehicles.toLocaleString()} vehicles • {uniqueResellersCount.toLocaleString()} unique resellers • Last updated: {dataFreshness || 'Never'}
+                {isAutoRefreshing && <span className="ml-2 text-blue-600">🔄 Auto-refreshing...</span>}
+                {isFetching && <span className="ml-2 text-blue-600">🔄 Fetching from ERP API...</span>}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Debug: Data length: {storedData?.data?.length || 0} | Resellers: {uniqueResellersCount}
+              </p>
+            </div>
             
             <div className="flex flex-col sm:flex-row gap-3">
               <button
