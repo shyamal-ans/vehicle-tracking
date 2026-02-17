@@ -154,7 +154,7 @@ const Sidebar = ({
           </svg>
 
           {sidebarOpen && (
-            <span className="text-base font-medium">Vehicle Table</span>
+            <span className="text-base font-medium">Vehicle Logs</span>
           )}
         </Link>
       </nav>

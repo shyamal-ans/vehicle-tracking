@@ -98,6 +98,84 @@ const vehicleOptions = [
   "GJ16AY3747",
 ];
 
+const vehicleImeiMap: Record<string, string> = {
+  "GJ16AW9807": "353742371885617",
+  "GJ16AW9529": "353742370083107",
+  "05": "353742371882069",
+  "GJ16AW6626": "353742371885401",
+  "07": "353742371890625",
+  "GJ16AY3754": "353742370068918",
+  "GJ16AW9750": "353742370076333",
+  "20": "353742371877911",
+  "19": "353742371877986",
+  "GJ16AY3949": "353742371890708",
+  "06": "353742371890716",
+  "GJ16AW6547": "353742371885864",
+  "03": "353742371885500",
+  "GJ16AY3742": "353742371885492",
+  "ER - HR39G7908": "353742375220951",
+  "ER - 04": "353742371877366",
+  "29": "353742371741851",
+  "08": "353742371890633",
+  "36": "353742371885591",
+  "28": "353742371891201",
+  "30": "353742371885120",
+  "26": "353742371877192",
+  "27": "353742371877523",
+  "21": "353742371877275",
+  "25": "353742371877341",
+  "31": "353742371877424",
+  "32": "353742371878190",
+  "02": "353742371890682",
+  "11": "353742371888017",
+  "01": "353742371890872",
+  "GJ16AW6950": "353742371885757",
+  "12": "353742371877481",
+  "14": "353742371878364",
+  "09": "353742371884768",
+  "22": "353742371877457",
+  "16": "353742371885583",
+  "10": "353742371891367",
+  "ER - 01": "353742371891789",
+  "GJ16AW6928": "353742371885260",
+  "GJ16AW6974": "353742371882077",
+  "GJ16AY3893": "353742371885674",
+  "GJ16AW9836": "353742370076325",
+  "ER - 03": "353742371885716",
+  "ER - 3300": "353742371877127",
+  "ER - 05": "353742371877838",
+  "ER - 06": "353742371882234",
+  "ER - 02": "353742370068942",
+  "GJ16AY3514": "353742371890773",
+  "GJ16AW6759": "353742371885328",
+  "24": "353742371885518",
+  "39": "353742370069007",
+  "40": "353742370076424",
+  "GJ16AY3540": "353742371885435",
+  "04": "353742371885351",
+  "GJ16AW6936": "353742371890856",
+  "GJ16AY3592": "353742371885575",
+  "ER - HR39G1072": "353742371877408",
+  "34": "353742371891441",
+  "17": "353742371891607",
+  "18": "353742370080665",
+  "33": "353742370068983",
+  "15": "353742371877374",
+  "GJ16AW7052": "353742371890609",
+  "ER - HR39G7976": "353742371891375",
+  "35": "353742371885740",
+  "23": "353742371877432",
+  "GJ16AW9745": "353742371877333",
+  "37": "353742371877358",
+  "38": "353742371885666",
+  "GJ16AW6814": "353742371745332",
+  "GJ16AW6958": "353742370076432",
+  "GJ16AW6534": "353742371890799",
+  "GJ16AW6597": "353742371885955",
+  "13": "353742371888009",
+  "GJ16AY3747": "353742371890781",
+};
+
 function formatDateTimeForApi(dateTimeLocal: string) {
   if (!dateTimeLocal) return "";
   const normalized = dateTimeLocal.replace("T", " ");
@@ -106,6 +184,11 @@ function formatDateTimeForApi(dateTimeLocal: string) {
 
 function getRowId(log: VehicleTrackLog, globalIndex: number) {
   return `${log.vehicleNumber}-${log.timestamp}-${globalIndex}`;
+}
+
+function toSafeString(value: unknown) {
+  if (value === null || value === undefined) return "";
+  return String(value);
 }
 
 export default function VehicleInformation() {
@@ -121,6 +204,8 @@ export default function VehicleInformation() {
   const [isSelectionFormOpen, setIsSelectionFormOpen] = useState(false);
   const [formVehicleNo, setFormVehicleNo] = useState("GJ16AY3949");
   const [isClient, setIsClient] = useState(false);
+  const [updateLoading, setUpdateLoading] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(vehicleData.length / rowsPerPage));
   const startIndex = (currentPage - 1) * rowsPerPage;
@@ -254,6 +339,84 @@ export default function VehicleInformation() {
       next.delete(rowId);
       return next;
     });
+  };
+
+  const handleUpdateAllData = async () => {
+    setUpdateMessage(null);
+
+    if (!selectedRows.length) {
+      setUpdateMessage("Please select at least one row to update.");
+      return;
+    }
+
+    const imeiNo = vehicleImeiMap[formVehicleNo];
+    if (!imeiNo) {
+      setUpdateMessage("IMEI not found for selected vehicle.");
+      return;
+    }
+
+    const transformedPayload = selectedRows.map(({ log }) => {
+      const latitude = Number(log.latitude || 0);
+      const longitude = Number(log.longitude || 0);
+
+      return {
+        imei_no: imeiNo,
+        lattitude: toSafeString(Math.abs(latitude)),
+        longitude: toSafeString(Math.abs(longitude)),
+        lattitude_direction: latitude < 0 ? "S" : "N",
+        longitude_direction: longitude < 0 ? "W" : "E",
+        speed: toSafeString(log.speed),
+        digital_port1: "1",
+        digital_port2: "1",
+        digital_port3: "1",
+        digital_port4: "1",
+        analog_port1: "7293",
+        analog_port2: "7293",
+        angle: toSafeString(log.direction),
+        satellite: toSafeString(log.no_of_satellites),
+        time: toSafeString(log.timestamp),
+        battery_voltage: toSafeString(log.battery_voltage),
+        gps_validity: "A",
+        main_power_supply: toSafeString(log.main_power || "0"),
+        vehicle_battery: "0",
+        lock1: "0",
+        lock2: "0",
+        track_mode: "0",
+        movement: "0",
+        alarm_status: "NOR",
+        vts_box: "1",
+        internal_battery_voltage: "1",
+        odometer_cumulative: "0.0",
+        odometer_non_cumulative: "0.0",
+      };
+    });
+
+    setUpdateLoading(true);
+    try {
+      const response = await fetch("/api/vehicle", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tokenType: "pushVehicleData",
+          payloadData: transformedPayload,
+        }),
+      });
+
+      const responseData = await response.json();
+      if (!response.ok) {
+        throw new Error(responseData?.error || "Failed to update data");
+      }
+
+      setUpdateMessage(
+        `Data updated successfully. Sent ${transformedPayload.length} record(s).`,
+      );
+    } catch (err) {
+      setUpdateMessage(`Update failed: ${String(err)}`);
+    } finally {
+      setUpdateLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -557,6 +720,20 @@ export default function VehicleInformation() {
                   Selected records:{" "}
                   <span className="font-semibold">{selectedRows.length}</span>
                 </div>
+
+                <button
+                  onClick={handleUpdateAllData}
+                  disabled={updateLoading || selectedRows.length === 0}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400"
+                >
+                  {updateLoading ? "Updating..." : "Update All Data"}
+                </button>
+
+                {updateMessage && (
+                  <div className="text-sm text-gray-700 bg-gray-100 border border-gray-200 rounded-md p-2">
+                    {updateMessage}
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-medium text-gray-700">
