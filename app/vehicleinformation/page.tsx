@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, type UIEvent } from "react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 
@@ -206,20 +206,32 @@ export default function VehicleInformation() {
   const [isClient, setIsClient] = useState(false);
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const selectedPreviewPageSize = 200;
+  const [visibleSelectedCount, setVisibleSelectedCount] =
+    useState(selectedPreviewPageSize);
 
   const totalPages = Math.max(1, Math.ceil(vehicleData.length / rowsPerPage));
   const startIndex = (currentPage - 1) * rowsPerPage;
   const endIndex = startIndex + rowsPerPage;
   const paginatedVehicleData = vehicleData.slice(startIndex, endIndex);
-  const selectedRows = vehicleData
-    .map((log, index) => ({ id: getRowId(log, index), log }))
-    .filter((row) => selectedRowIds.has(row.id));
-  const allPageRowIds = paginatedVehicleData.map((log, index) =>
-    getRowId(log, startIndex + index),
-  );
-  const areAllRowsOnPageSelected =
-    allPageRowIds.length > 0 &&
-    allPageRowIds.every((id) => selectedRowIds.has(id));
+  const selectedCount = selectedRowIds.size;
+  const areAllRowsSelected =
+    vehicleData.length > 0 && selectedCount === vehicleData.length;
+  const selectedRowsPreview = useMemo(() => {
+    if (!isSelectionFormOpen || selectedCount === 0) return [];
+    const targetCount = Math.min(visibleSelectedCount, selectedCount);
+    const rows: { id: string; log: VehicleTrackLog }[] = [];
+    for (let index = 0; index < vehicleData.length; index += 1) {
+      if (rows.length >= targetCount) break;
+      const log = vehicleData[index];
+      const rowId = getRowId(log, index);
+      if (selectedRowIds.has(rowId)) {
+        rows.push({ id: rowId, log });
+      }
+    }
+    return rows;
+  }, [isSelectionFormOpen, selectedCount, selectedRowIds, vehicleData, visibleSelectedCount]);
+  const hasMoreSelectedRows = selectedRowsPreview.length < selectedCount;
 
   const fetchVehicleData = async () => {
     setLoading(true);
@@ -306,26 +318,37 @@ export default function VehicleInformation() {
     });
   };
 
-  const toggleSelectAllOnPage = () => {
+  const toggleSelectAllRows = () => {
     setSelectedRowIds((prev) => {
-      const next = new Set(prev);
-      if (areAllRowsOnPageSelected) {
-        allPageRowIds.forEach((id) => next.delete(id));
-      } else {
-        allPageRowIds.forEach((id) => next.add(id));
+      if (vehicleData.length === 0) return prev;
+      if (prev.size === vehicleData.length) {
+        return new Set();
+      }
+      const next = new Set<string>();
+      for (let index = 0; index < vehicleData.length; index += 1) {
+        next.add(getRowId(vehicleData[index], index));
       }
       return next;
     });
   };
 
   const openSelectionForm = () => {
-    if (selectedRows.length === 0) return;
-    const firstSelectedVehicle = selectedRows[0].log.vehicleNumber;
+    if (selectedCount === 0) return;
+    setUpdateMessage(null)
+    let firstSelectedVehicle = vehicleNo;
+    for (let index = 0; index < vehicleData.length; index += 1) {
+      const rowId = getRowId(vehicleData[index], index);
+      if (selectedRowIds.has(rowId)) {
+        firstSelectedVehicle = vehicleData[index].vehicleNumber;
+        break;
+      }
+    }
     if (vehicleOptions.includes(firstSelectedVehicle)) {
       setFormVehicleNo(firstSelectedVehicle);
     } else {
       setFormVehicleNo(vehicleNo);
     }
+    setVisibleSelectedCount(Math.min(selectedPreviewPageSize, selectedCount));
     setIsSelectionFormOpen(true);
   };
 
@@ -344,7 +367,7 @@ export default function VehicleInformation() {
   const handleUpdateAllData = async () => {
     setUpdateMessage(null);
 
-    if (!selectedRows.length) {
+    if (!selectedCount) {
       setUpdateMessage("Please select at least one row to update.");
       return;
     }
@@ -355,11 +378,16 @@ export default function VehicleInformation() {
       return;
     }
 
-    const transformedPayload = selectedRows.map(({ log }) => {
+    const transformedPayload = [];
+    for (let index = 0; index < vehicleData.length; index += 1) {
+      const log = vehicleData[index];
+      const rowId = getRowId(log, index);
+      if (!selectedRowIds.has(rowId)) continue;
+
       const latitude = Number(log.latitude || 0);
       const longitude = Number(log.longitude || 0);
 
-      return {
+      transformedPayload.push({
         imei_no: imeiNo,
         lattitude: toSafeString(Math.abs(latitude)),
         longitude: toSafeString(Math.abs(longitude)),
@@ -388,8 +416,8 @@ export default function VehicleInformation() {
         internal_battery_voltage: "1",
         odometer_cumulative: "0.0",
         odometer_non_cumulative: "0.0",
-      };
-    });
+      });
+    }
 
     setUpdateLoading(true);
     try {
@@ -410,12 +438,27 @@ export default function VehicleInformation() {
       }
 
       setUpdateMessage(
-        `Data updated successfully. Sent ${transformedPayload.length} record(s).`,
+        `${responseData?.message} Sent ${transformedPayload.length} record(s).` || `Data updated successfully. Sent ${transformedPayload.length} record(s).`,
       );
     } catch (err) {
       setUpdateMessage(`Update failed: ${String(err)}`);
     } finally {
       setUpdateLoading(false);
+    }
+  };
+
+  const loadMoreSelectedRows = () => {
+    setVisibleSelectedCount((prev) =>
+      Math.min(prev + selectedPreviewPageSize, selectedCount),
+    );
+  };
+
+  const handleSelectedListScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (!hasMoreSelectedRows) return;
+    const element = event.currentTarget;
+    const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (remaining < 80) {
+      loadMoreSelectedRows();
     }
   };
 
@@ -426,6 +469,11 @@ export default function VehicleInformation() {
   useEffect(() => {
     fetchVehicleData();
   }, []);
+
+  useEffect(() => {
+    if (!isSelectionFormOpen) return;
+    setVisibleSelectedCount(Math.min(selectedPreviewPageSize, selectedCount));
+  }, [isSelectionFormOpen, selectedCount]);
 
   return (
     <main className="flex min-h-screen flex-col md:pt-4 md:px-8 space-y-8">
@@ -510,11 +558,11 @@ export default function VehicleInformation() {
       <div className="bg-white shadow-md rounded-lg overflow-hidden">
         <div className="px-6 py-3 border-b border-gray-200 flex items-center justify-between">
           <div className="text-sm text-gray-600">
-            {selectedRows.length} row(s) selected
+            {selectedCount} row(s) selected
           </div>
           <button
             onClick={openSelectionForm}
-            disabled={selectedRows.length === 0}
+            disabled={selectedCount === 0}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400"
           >
             Open Form With Selected Data
@@ -557,9 +605,9 @@ export default function VehicleInformation() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <input
                     type="checkbox"
-                    checked={areAllRowsOnPageSelected}
-                    onChange={toggleSelectAllOnPage}
-                    aria-label="Select all rows on current page"
+                    checked={areAllRowsSelected}
+                    onChange={toggleSelectAllRows}
+                    aria-label="Select all rows"
                   />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -718,12 +766,12 @@ export default function VehicleInformation() {
 
                 <div className="text-sm text-gray-700">
                   Selected records:{" "}
-                  <span className="font-semibold">{selectedRows.length}</span>
+                  <span className="font-semibold">{selectedCount}</span>
                 </div>
 
                 <button
                   onClick={handleUpdateAllData}
-                  disabled={updateLoading || selectedRows.length === 0}
+                  disabled={updateLoading || selectedCount === 0}
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400"
                 >
                   {updateLoading ? "Updating..." : "Update All Data"}
@@ -741,16 +789,19 @@ export default function VehicleInformation() {
                   </h4>
                   <button
                     onClick={deselectAllRows}
-                    disabled={selectedRows.length === 0}
+                    disabled={selectedCount === 0}
                     className="px-3 py-1 text-xs border border-red-300 text-red-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Deselect All
                   </button>
                 </div>
 
-                <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                  {selectedRows.length > 0 ? (
-                    selectedRows.map((row) => (
+                <div
+                  className="max-h-72 overflow-y-auto space-y-2 pr-1"
+                  onScroll={handleSelectedListScroll}
+                >
+                  {selectedCount > 0 ? (
+                    selectedRowsPreview.map((row) => (
                       <div
                         key={row.id}
                         className="border border-gray-200 rounded-md p-2 bg-gray-50 flex items-start justify-between gap-2"
@@ -772,6 +823,13 @@ export default function VehicleInformation() {
                   ) : (
                     <div className="text-xs text-gray-500 border border-dashed border-gray-300 rounded-md p-3">
                       No rows selected.
+                    </div>
+                  )}
+                  {selectedCount > 0 && (
+                    <div className="text-xs text-gray-500 border border-dashed border-gray-300 rounded-md p-3">
+                      Showing {selectedRowsPreview.length} of {selectedCount}{" "}
+                      selected rows.
+                      {hasMoreSelectedRows ? " Scroll down to load more." : ""}
                     </div>
                   )}
                 </div>
