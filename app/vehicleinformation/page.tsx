@@ -96,6 +96,7 @@ const vehicleOptions = [
   "GJ16AW6597",
   "13",
   "GJ16AY3747",
+  "Demo"
 ];
 
 const vehicleImeiMap: Record<string, string> = {
@@ -174,6 +175,7 @@ const vehicleImeiMap: Record<string, string> = {
   "GJ16AW6597": "353742371885955",
   "13": "353742371888009",
   "GJ16AY3747": "353742371890781",
+  "Demo" : "123"
 };
 
 function formatDateTimeForApi(dateTimeLocal: string) {
