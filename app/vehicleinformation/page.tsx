@@ -205,6 +205,9 @@ export default function VehicleInformation() {
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [isSelectionFormOpen, setIsSelectionFormOpen] = useState(false);
   const [formVehicleNo, setFormVehicleNo] = useState("GJ16AY3949");
+  const [formImeiNo, setFormImeiNo] = useState(
+    vehicleImeiMap["GJ16AY3949"] ?? "",
+  );
   const [isClient, setIsClient] = useState(false);
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
@@ -336,7 +339,7 @@ export default function VehicleInformation() {
 
   const openSelectionForm = () => {
     if (selectedCount === 0) return;
-    setUpdateMessage(null)
+    setUpdateMessage(null);
     let firstSelectedVehicle = vehicleNo;
     for (let index = 0; index < vehicleData.length; index += 1) {
       const rowId = getRowId(vehicleData[index], index);
@@ -345,11 +348,11 @@ export default function VehicleInformation() {
         break;
       }
     }
-    if (vehicleOptions.includes(firstSelectedVehicle)) {
-      setFormVehicleNo(firstSelectedVehicle);
-    } else {
-      setFormVehicleNo(vehicleNo);
-    }
+    const nextVehicleNo = vehicleOptions.includes(firstSelectedVehicle)
+      ? firstSelectedVehicle
+      : vehicleNo;
+    setFormVehicleNo(nextVehicleNo);
+    setFormImeiNo(vehicleImeiMap[nextVehicleNo] ?? "");
     setVisibleSelectedCount(Math.min(selectedPreviewPageSize, selectedCount));
     setIsSelectionFormOpen(true);
   };
@@ -374,9 +377,9 @@ export default function VehicleInformation() {
       return;
     }
 
-    const imeiNo = vehicleImeiMap[formVehicleNo];
+    const imeiNo = formImeiNo.trim() || vehicleImeiMap[formVehicleNo] || "";
     if (!imeiNo) {
-      setUpdateMessage("IMEI not found for selected vehicle.");
+      setUpdateMessage("Please enter a valid IMEI number.");
       return;
     }
 
@@ -755,7 +758,11 @@ export default function VehicleInformation() {
                   </label>
                   <select
                     value={formVehicleNo}
-                    onChange={(e) => setFormVehicleNo(e.target.value)}
+                    onChange={(e) => {
+                      const nextVehicleNo = e.target.value;
+                      setFormVehicleNo(nextVehicleNo);
+                      setFormImeiNo(vehicleImeiMap[nextVehicleNo] ?? "");
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {vehicleOptions.map((option) => (
@@ -764,6 +771,19 @@ export default function VehicleInformation() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    IMEI Number
+                  </label>
+                  <input
+                    type="text"
+                    value={formImeiNo}
+                    onChange={(e) => setFormImeiNo(e.target.value)}
+                    placeholder="Enter IMEI number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
 
                 <div className="text-sm text-gray-700">
