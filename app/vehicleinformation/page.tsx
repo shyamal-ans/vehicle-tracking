@@ -184,6 +184,23 @@ function formatDateTimeForApi(dateTimeLocal: string) {
   return normalized.length === 16 ? `${normalized}:00` : normalized;
 }
 
+function getCurrentDateTimeLocal() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+}
+
+function resolveTransferTime(dateTimeLocal: string, fallback: string) {
+  if (!dateTimeLocal) return fallback;
+  const normalized = dateTimeLocal.replace("T", " ");
+  return normalized.length === 16 ? `${normalized}:00` : normalized;
+}
+
 function getRowId(log: VehicleTrackLog, globalIndex: number) {
   return `${log.vehicleNumber}-${log.timestamp}-${globalIndex}`;
 }
@@ -207,6 +224,9 @@ export default function VehicleInformation() {
   const [formVehicleNo, setFormVehicleNo] = useState("GJ16AY3949");
   const [formImeiNo, setFormImeiNo] = useState(
     vehicleImeiMap["GJ16AY3949"] ?? "",
+  );
+  const [formTransferDate, setFormTransferDate] = useState(
+    getCurrentDateTimeLocal(),
   );
   const [isClient, setIsClient] = useState(false);
   const [updateLoading, setUpdateLoading] = useState(false);
@@ -353,6 +373,7 @@ export default function VehicleInformation() {
       : vehicleNo;
     setFormVehicleNo(nextVehicleNo);
     setFormImeiNo(vehicleImeiMap[nextVehicleNo] ?? "");
+    setFormTransferDate(getCurrentDateTimeLocal());
     setVisibleSelectedCount(Math.min(selectedPreviewPageSize, selectedCount));
     setIsSelectionFormOpen(true);
   };
@@ -382,6 +403,7 @@ export default function VehicleInformation() {
       setUpdateMessage("Please enter a valid IMEI number.");
       return;
     }
+    const transferDateOverride = formTransferDate.trim();
 
     const transformedPayload = [];
     for (let index = 0; index < vehicleData.length; index += 1) {
@@ -407,7 +429,10 @@ export default function VehicleInformation() {
         analog_port2: "7293",
         angle: toSafeString(log.direction),
         satellite: toSafeString(log.no_of_satellites),
-        time: toSafeString(log.timestamp),
+        time: resolveTransferTime(
+          transferDateOverride,
+          toSafeString(log.timestamp),
+        ),
         battery_voltage: toSafeString(log.battery_voltage),
         gps_validity: "A",
         main_power_supply: toSafeString(log.main_power || "0"),
@@ -782,6 +807,19 @@ export default function VehicleInformation() {
                     value={formImeiNo}
                     onChange={(e) => setFormImeiNo(e.target.value)}
                     placeholder="Enter IMEI number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Transfer Date & Time
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={formTransferDate}
+                    onChange={(e) => setFormTransferDate(e.target.value)}
+                    step={1}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
