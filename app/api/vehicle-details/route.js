@@ -1,18 +1,24 @@
 import { NextResponse } from 'next/server';
 
+// Updated 2026-03-24: Credentials for token API.
 const credentials = {
   username: 'shyamal@ansgujarat.in',
-  password: 'Shyamal@1986',
+  password: 'Horizon@0906',
 };
 
-const JSESSIONID = '7120FB4EB2CE3E647CE658410348647D';
+// Updated 2026-03-24: Cookies required by token/data APIs.
+const TOKEN_COOKIE =
+  'JSESSIONID=CBE37DC7D348F8BD489A1CDFB9B0D2CC; JSESSIONID=0A148E37FE80F80FF9BD32584DA04FD2';
+const DATA_COOKIE =
+  'JSESSIONID=CBE37DC7D348F8BD489A1CDFB9B0D2CC; JSESSIONID=2356C787F0B6539092BFFFE8E57261C6';
 
 async function getAuthCode() {
+  // Updated 2026-03-24: Token API call.
   const res = await fetch('http://13.233.185.89/webservice?token=generateAccessToken', {
     method: 'POST', // ✅ Use POST here instead of GET
     headers: {
       'Content-Type': 'application/json',
-      'Cookie': `JSESSIONID=${JSESSIONID}`,
+      'Cookie': TOKEN_COOKIE,
     },
     body: JSON.stringify(credentials),
   });
@@ -42,12 +48,13 @@ export async function POST(request) {
     const token = await getAuthCode();
     const payload = await request.json();
 
+    // Updated 2026-03-24: Admin data API call.
     const res = await fetch('http://13.233.185.89/webservice?token=getAdminData', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'auth-code': token,
-        'Cookie': `JSESSIONID=${JSESSIONID}`,
+        'Cookie': DATA_COOKIE,
       },
       body: JSON.stringify(payload),
     });

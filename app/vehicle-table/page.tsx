@@ -30,12 +30,47 @@ type Vehicle = {
 
 // Optimized page size for better performance
 const pageSize = 1000;
+// Updated 2026-03-24: Default project IDs when "All" is selected.
+const ALL_PROJECT_IDS =
+  "16,17,21,22,34,37,40,41,46,48,49,52,53,58,59,72,77";
+// Updated 2026-03-24: Default paging for admin data API.
+const DEFAULT_PAGE_SIZE = "100";
+const DEFAULT_PAGE_NO = "1";
+
+// Updated 2026-03-24: Helper for date formatting.
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+// Updated 2026-03-24: Local date helpers for default date range.
+const getTodayStartLocal = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(
+    now.getDate(),
+  )}T00:00`;
+};
+
+// Updated 2026-03-24: Local date helpers for default date range.
+const getTodayEndLocal = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(
+    now.getDate(),
+  )}T23:59`;
+};
+
+// Updated 2026-03-24: Format local datetime for API payload.
+const formatDateTimeForApi = (dateTimeLocal: string) => {
+  if (!dateTimeLocal) return "";
+  const normalized = dateTimeLocal.replace("T", " ");
+  return normalized.length === 16 ? `${normalized}:00` : normalized;
+};
 
 const VehicleTrackingDashboard = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  // Updated 2026-03-24: User-selected date range for admin data payload.
+  const [queryStartDate, setQueryStartDate] = useState(getTodayStartLocal);
+  const [queryEndDate, setQueryEndDate] = useState(getTodayEndLocal);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasAutoFetched, setHasAutoFetched] = useState(false);
   const [totalVehicles, setTotalVehicles] = useState(0);
@@ -81,21 +116,48 @@ const VehicleTrackingDashboard = () => {
   const [isLoadingStored, setIsLoadingStored] = useState(true);
   const [storedError, setStoredError] = useState<any>(null);
 
+  // Updated 2026-03-24: Build admin data payload from UI state.
+  const getAdminDataPayload = useCallback(() => {
+    const startDate = formatDateTimeForApi(
+      queryStartDate || getTodayStartLocal(),
+    );
+    const endDate = formatDateTimeForApi(queryEndDate || getTodayEndLocal());
+    const projectId = filters.projectId?.trim()
+      ? filters.projectId.trim()
+      : ALL_PROJECT_IDS;
+
+    return {
+      pageSize: DEFAULT_PAGE_SIZE,
+      pageNo: DEFAULT_PAGE_NO,
+      projectId,
+      startDate,
+      endDate,
+    };
+  }, [queryStartDate, queryEndDate, filters.projectId]);
+
   // Optimized data fetching with better error handling
   const fetchAllData = useCallback(async () => {
     try {
       setIsLoadingStored(true);
       const startTime = Date.now();
       
-      const response = await fetch('/api/vehicles/stored');
+      // Updated 2026-03-24: Use admin data API with dynamic payload.
+      const response = await fetch('/api/vehicle-details', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getAdminDataPayload()),
+      });
       const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error('Failed to fetch data');
+
+      const isSuccess =
+        data?.success === true || data?.result === 1 || Array.isArray(data?.data);
+      if (!isSuccess) {
+        throw new Error(data?.message || data?.error || 'Failed to fetch data');
       }
-      
+
+      const vehiclesRaw = Array.isArray(data?.data) ? data.data : [];
       // Add unique IDs to prevent duplicate key errors
-      const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
+      const vehiclesWithIds = vehiclesRaw.map((vehicle: Vehicle, index: number) => ({
         ...vehicle,
         uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${index}`
       }));
@@ -103,8 +165,8 @@ const VehicleTrackingDashboard = () => {
       const totalTime = Date.now() - startTime;
       console.log(`⚡ Frontend loaded all ${vehiclesWithIds.length} vehicles in ${totalTime}ms`);
       
-      setStoredData({ 
-        success: true, 
+      setStoredData({
+        success: true,
         data: vehiclesWithIds,
         loadTime: `${totalTime}ms`
       });
@@ -116,7 +178,7 @@ const VehicleTrackingDashboard = () => {
     } finally {
       setIsLoadingStored(false);
     }
-  }, []);
+  }, [getAdminDataPayload]);
 
   // Fetch all data at once
   useEffect(() => {
@@ -129,14 +191,22 @@ const VehicleTrackingDashboard = () => {
       setIsLoadingStored(true);
       const startTime = Date.now();
       
-      const response = await fetch('/api/vehicles/stored');
+      // Updated 2026-03-24: Use admin data API with dynamic payload.
+      const response = await fetch('/api/vehicle-details', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getAdminDataPayload()),
+      });
       const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error('Failed to fetch data');
+
+      const isSuccess =
+        data?.success === true || data?.result === 1 || Array.isArray(data?.data);
+      if (!isSuccess) {
+        throw new Error(data?.message || data?.error || 'Failed to fetch data');
       }
-      
-      const vehiclesWithIds = data.data.map((vehicle: Vehicle, index: number) => ({
+
+      const vehiclesRaw = Array.isArray(data?.data) ? data.data : [];
+      const vehiclesWithIds = vehiclesRaw.map((vehicle: Vehicle, index: number) => ({
         ...vehicle,
         uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${index}`
       }));
@@ -156,7 +226,7 @@ const VehicleTrackingDashboard = () => {
     } finally {
       setIsLoadingStored(false);
     }
-  }, []);
+  }, [getAdminDataPayload]);
 
   // Optimized debounce search query with loading indicator
   useEffect(() => {
@@ -638,6 +708,9 @@ const VehicleTrackingDashboard = () => {
   const resetFilters = useCallback(() => {
     setSearchQuery("");
     setDebouncedSearchQuery("");
+    // Updated 2026-03-24: Reset date range to today.
+    setQueryStartDate(getTodayStartLocal());
+    setQueryEndDate(getTodayEndLocal());
     setFilters({
       ip: "",
       vehicleNo: "",
@@ -914,8 +987,6 @@ const VehicleTrackingDashboard = () => {
                 )}
               </div>
               
-
-              
               <button
                 onClick={resetFilters}
                 className="px-4 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-200 flex items-center gap-2"
@@ -957,7 +1028,7 @@ const VehicleTrackingDashboard = () => {
                 {isAutoRefreshing ? "Refreshing..." : "Refresh Now"}
               </button>
 
-              <button
+              {/* <button
                 onClick={() => triggerFetch()}
                 disabled={isFetching}
                 className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 ${
@@ -982,7 +1053,7 @@ const VehicleTrackingDashboard = () => {
                     ? "Fetch Data" 
                     : "Fetch Fresh Data"
                 }
-              </button>
+              </button> */}
 
               <button
                 onClick={() => setShowColumnSelector(!showColumnSelector)}
@@ -1012,7 +1083,35 @@ const VehicleTrackingDashboard = () => {
 
             </div>
           </div>
+          {/* Updated 2026-03-24: Date range inputs for admin data payload */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-4 justify-end">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-gray-600 mb-1">
+                    Start Date
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={queryStartDate}
+                    onChange={(e) => setQueryStartDate(e.target.value)}
+                    step={1}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 backdrop-blur-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-gray-600 mb-1">
+                    End Date
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={queryEndDate}
+                    onChange={(e) => setQueryEndDate(e.target.value)}
+                    step={1}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/80 backdrop-blur-sm"
+                  />
+                </div>
+              </div>
         </div>
+        
 
 
 
