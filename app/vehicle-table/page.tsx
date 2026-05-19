@@ -28,8 +28,8 @@ type Vehicle = {
   uniqueId?: string;
 };
 
-// Optimized page size for better performance
-const pageSize = 1000;
+// Optimized page size for better performance and to match the backend response.
+const pageSize = 100;
 // Updated 2026-03-24: Default project IDs when "All" is selected.
 const ALL_PROJECT_IDS =
   "16,17,21,22,34,37,40,41,46,48,49,52,53,58,59,72,77";
@@ -128,12 +128,12 @@ const VehicleTrackingDashboard = () => {
 
     return {
       pageSize: DEFAULT_PAGE_SIZE,
-      pageNo: DEFAULT_PAGE_NO,
+      pageNo: String(currentPage),
       projectId,
       startDate,
       endDate,
     };
-  }, [queryStartDate, queryEndDate, filters.projectId]);
+  }, [currentPage, queryStartDate, queryEndDate, filters.projectId]);
 
   // Optimized data fetching with better error handling
   const fetchAllData = useCallback(async () => {
@@ -163,11 +163,13 @@ const VehicleTrackingDashboard = () => {
       }));
       
       const totalTime = Date.now() - startTime;
-      console.log(`⚡ Frontend loaded all ${vehiclesWithIds.length} vehicles in ${totalTime}ms`);
+      console.log(`⚡ Frontend loaded ${vehiclesWithIds.length} vehicles in ${totalTime}ms`);
       
       setStoredData({
         success: true,
         data: vehiclesWithIds,
+        totalRecords: data?.totalRecords ?? vehiclesWithIds.length,
+        totalPages: data?.totalPages ?? Math.ceil((data?.totalRecords ?? vehiclesWithIds.length) / pageSize),
         loadTime: `${totalTime}ms`
       });
       setLastRefreshTime(new Date());
@@ -217,6 +219,8 @@ const VehicleTrackingDashboard = () => {
       setStoredData({ 
         success: true, 
         data: vehiclesWithIds,
+        totalRecords: data?.totalRecords ?? vehiclesWithIds.length,
+        totalPages: data?.totalPages ?? Math.ceil((data?.totalRecords ?? vehiclesWithIds.length) / pageSize),
         loadTime: `${totalTime}ms`
       });
       setLastRefreshTime(new Date());
@@ -498,26 +502,29 @@ const VehicleTrackingDashboard = () => {
       });
     }
     
-    // Apply pagination
-    const startIndex = (currentPage - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-    const paginatedData = filteredData.slice(startIndex, endIndex);
+    // When the API already provides a page of rows, do not paginate again client-side.
+    const paginatedData = filteredData;
     
     return {
       vehicles: paginatedData,
       total: filteredData.length,
-      totalPages: Math.ceil(filteredData.length / pageSize)
+      totalPages: storedData?.totalPages ?? Math.ceil(filteredData.length / pageSize)
     };
-  }, [searchableVehicles, debouncedSearchQuery, filters, sortConfig, currentPage]);
+  }, [searchableVehicles, debouncedSearchQuery, filters, sortConfig, currentPage, storedData?.totalPages]);
 
   // Update state when filtered data changes
   useEffect(() => {
     setVehicles(filteredAndPaginatedData.vehicles);
-    setTotalVehicles(filteredAndPaginatedData.total);
-    setTotalPages(filteredAndPaginatedData.totalPages);
+    if (storedData?.totalRecords != null) {
+      setTotalVehicles(storedData.totalRecords);
+      setTotalPages(storedData.totalPages ?? Math.ceil((storedData.totalRecords || filteredAndPaginatedData.total) / pageSize));
+    } else {
+      setTotalVehicles(filteredAndPaginatedData.total);
+      setTotalPages(filteredAndPaginatedData.totalPages);
+    }
     
-    console.log('🔍 Filter results:', filteredAndPaginatedData.total, 'vehicles, page', currentPage);
-  }, [filteredAndPaginatedData, currentPage]);
+    console.log('🔍 Filter results:', storedData?.totalRecords ?? filteredAndPaginatedData.total, 'vehicles, page', currentPage);
+  }, [filteredAndPaginatedData, currentPage, storedData?.totalRecords, storedData?.totalPages]);
 
   // Reset to page 1 when search or filters change
   useEffect(() => {
