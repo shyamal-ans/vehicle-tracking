@@ -144,6 +144,7 @@ const VehicleTrackingDashboard = () => {
       // Updated 2026-03-24: Use admin data API with dynamic payload.
       const response = await fetch('/api/vehicle-details', {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(getAdminDataPayload()),
       });
@@ -196,6 +197,7 @@ const VehicleTrackingDashboard = () => {
       // Updated 2026-03-24: Use admin data API with dynamic payload.
       const response = await fetch('/api/vehicle-details', {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(getAdminDataPayload()),
       });
@@ -351,7 +353,7 @@ const VehicleTrackingDashboard = () => {
   const triggerFetch = useCallback(async () => {
     try {
       setIsFetching(true);
-      const response = await fetch('/api/cron/fetch-vehicles', { method: 'POST' });
+      const response = await fetch('/api/cron/fetch-vehicles', { method: 'POST', cache: 'no-store' });
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);

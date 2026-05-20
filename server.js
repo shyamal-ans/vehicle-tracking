@@ -22,8 +22,8 @@ async function fetchVehicleData() {
   try {
     console.log('🚀 Starting scheduled vehicle data fetch...');
     console.log('🔗 Calling API endpoint: /api/cron/fetch-vehicles');
-    
-    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/cron/fetch-vehicles`, {
+    const defaultOrigin = process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${port}`;
+    const response = await fetch(`${defaultOrigin}/api/cron/fetch-vehicles`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.CRON_SECRET || 'default-secret'}`,

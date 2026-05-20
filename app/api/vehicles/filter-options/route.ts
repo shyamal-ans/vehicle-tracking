@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readVehicleData, VehicleData } from '@/Utils/dataStorage';
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,42 +6,44 @@ export async function GET(request: NextRequest) {
     const forceRefresh = searchParams.get('refresh') === 'true';
     
     console.log('🔍 Filter options request:', { forceRefresh });
-    
-    console.log('🔄 Computing filter options from data...');
-    const data = await readVehicleData();
-    
-    console.log('📊 Data status:', {
-      hasData: !!data,
-      hasVehicles: !!data?.vehicles,
-      vehicleCount: data?.vehicles?.length || 0
+
+    const endpointUrl = new URL('/api/vehicles/stored', request.nextUrl.origin);
+    endpointUrl.searchParams.set('page', '1');
+    endpointUrl.searchParams.set('pageSize', '999999');
+    if (forceRefresh) {
+      endpointUrl.searchParams.set('refresh', 'true');
+    }
+
+    console.log('🔄 Fetching live vehicle data for filter options from', endpointUrl.toString());
+    const storedResponse = await fetch(endpointUrl.toString(), {
+      cache: 'no-store',
     });
-    
-    if (!data || !data.vehicles || data.vehicles.length === 0) {
-      console.log('⚠️ No vehicle data available for filter options');
-      const emptyOptions = {
-        servers: [],
-        companies: [],
-        platforms: [],
-        regions: [],
-        projects: []
-      };
-      
+    const result = await storedResponse.json();
+
+    if (!result.success || !Array.isArray(result.data)) {
+      console.warn('⚠️ Live stored vehicle data unavailable, falling back to empty filter options');
       return NextResponse.json({
         success: true,
-        data: emptyOptions,
+        data: {
+          servers: [],
+          companies: [],
+          platforms: [],
+          regions: [],
+          projects: []
+        },
         timestamp: new Date().toISOString(),
-        source: 'empty'
+        source: 'fallback'
       });
     }
 
-    // Extract unique values for each filter from ALL cached data
-    console.log('🔍 Extracting filter options from', data.vehicles.length, 'vehicles');
-    
-    const servers = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.ip))).sort();
-    const companies = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.companyName))).sort();
-    const platforms = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectName))).sort();
-    const regions = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.region))).sort();
-    const projects = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectName))).sort();
+    const vehicles = result.data;
+    console.log('📊 Computing filter options from', vehicles.length, 'live vehicles');
+
+    const servers = Array.from(new Set(vehicles.map((v: any) => v.ip))).filter(Boolean).sort();
+    const companies = Array.from(new Set(vehicles.map((v: any) => v.companyName))).filter(Boolean).sort();
+    const platforms = Array.from(new Set(vehicles.map((v: any) => v.projectName))).filter(Boolean).sort();
+    const regions = Array.from(new Set(vehicles.map((v: any) => v.region))).filter(Boolean).sort();
+    const projects = Array.from(new Set(vehicles.map((v: any) => v.projectName))).filter(Boolean).sort();
 
     const filterOptions = {
       servers,
@@ -52,20 +53,17 @@ export async function GET(request: NextRequest) {
       projects
     };
 
-    console.log('📊 Filter options computed:', {
-      servers: servers.length,
-      companies: companies.length,
-      platforms: platforms.length,
-      regions: regions.length,
-      projects: projects.length
-    });
-
     return NextResponse.json({
       success: true,
       data: filterOptions,
       timestamp: new Date().toISOString(),
-      source: 'computed',
-      vehicleCount: data.vehicles.length
+      source: 'live',
+      vehicleCount: vehicles.length
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        Pragma: 'no-cache',
+      }
     });
 
   } catch (error) {
@@ -90,14 +88,21 @@ export async function GET(request: NextRequest) {
 }
 
 // Force refresh filter options
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     console.log('🔄 Force refreshing filter options...');
-    
-    // Recompute from fresh data
-    const data = await readVehicleData();
-    
-    if (!data || !data.vehicles || data.vehicles.length === 0) {
+
+    const endpointUrl = new URL('/api/vehicles/stored', request.nextUrl.origin);
+    endpointUrl.searchParams.set('page', '1');
+    endpointUrl.searchParams.set('pageSize', '999999');
+
+    const response = await fetch(endpointUrl.toString(), {
+      cache: 'no-store',
+    });
+    const storedData = await response.json();
+
+    const vehicles = Array.isArray(storedData.data) ? storedData.data : [];
+    if (vehicles.length === 0) {
       return NextResponse.json({
         success: true,
         message: 'No data available to compute filter options',
@@ -112,12 +117,11 @@ export async function POST() {
       });
     }
 
-    // Extract unique values for each filter
-    const servers = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.ip))).sort();
-    const companies = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.companyName))).sort();
-    const platforms = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectName))).sort();
-    const regions = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.region))).sort();
-    const projects = Array.from(new Set(data.vehicles.map((v: VehicleData) => v.projectName))).sort();
+    const servers = Array.from(new Set(vehicles.map((v: any) => v.ip))).filter(Boolean).sort();
+    const companies = Array.from(new Set(vehicles.map((v: any) => v.companyName))).filter(Boolean).sort();
+    const platforms = Array.from(new Set(vehicles.map((v: any) => v.projectName))).filter(Boolean).sort();
+    const regions = Array.from(new Set(vehicles.map((v: any) => v.region))).filter(Boolean).sort();
+    const projects = Array.from(new Set(vehicles.map((v: any) => v.projectName))).filter(Boolean).sort();
 
     const filterOptions = {
       servers,
@@ -131,7 +135,7 @@ export async function POST() {
       success: true,
       message: 'Filter options refreshed successfully',
       data: filterOptions,
-      vehicleCount: data.vehicles.length,
+      vehicleCount: vehicles.length,
       timestamp: new Date().toISOString()
     });
 

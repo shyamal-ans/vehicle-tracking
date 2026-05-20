@@ -169,7 +169,7 @@ function POI() {
       sortDirection: "DESC",
       searchText: "",
     },
-    fetchPolicy: "cache-first", // 👈 uses cache if data exists
+    fetchPolicy: "network-only", // always request fresh data
   });
   if (loading) return <p>Loading...</p>;
   if (error) return <p>Error: {error.message}</p>;

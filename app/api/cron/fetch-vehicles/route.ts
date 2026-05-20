@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appendVehicleData, writeVehicleData, cleanOldData, readVehicleData, needsDataFetch, getDataAge } from '@/Utils/dataStorage';
 
+export const runtime = 'nodejs';
+
 const credentials = {
   username: 'shyamal@ansgujarat.in',
   password: 'Shyamal@1986',
