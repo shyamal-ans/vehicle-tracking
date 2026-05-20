@@ -19,7 +19,9 @@ const Header = ({
     const fetchResellers = async () => {
       try {
         setIsLoadingResellers(true);
-        const response = await fetch('/api/vehicles/stored');
+        const response = await fetch('/api/vehicles/stored', {
+          cache: 'no-store'
+        });
         const data = await response.json();
         
         if (data.success && data.data) {

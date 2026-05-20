@@ -269,6 +269,7 @@ export default function VehicleInformation() {
       // Step 1: Get access token using local API route
       const tokenResponse = await fetch("/api/vehicle", {
         method: "POST",
+        cache: 'no-store',
         headers: {
           "Content-Type": "application/json",
         },
@@ -292,6 +293,7 @@ export default function VehicleInformation() {
       // Step 2: Get vehicle track logs using the token via local API route
       const vehicleResponse = await fetch("/api/vehicle", {
         method: "POST",
+        cache: 'no-store',
         headers: {
           "Content-Type": "application/json",
         },
@@ -453,6 +455,7 @@ export default function VehicleInformation() {
     try {
       const response = await fetch("/api/vehicle", {
         method: "POST",
+        cache: 'no-store',
         headers: {
           "Content-Type": "application/json",
         },

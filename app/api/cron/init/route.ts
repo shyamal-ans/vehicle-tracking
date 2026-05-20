@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     // Start the vehicle data fetch cron job
-    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/cron/schedule`, {
+    const origin = request?.nextUrl?.origin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const response = await fetch(`${origin}/api/cron/schedule`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -42,10 +45,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     // Check if cron job is running
-    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/cron/schedule`, {
+    const origin = request?.nextUrl?.origin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const response = await fetch(`${origin}/api/cron/schedule`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${process.env.CRON_SECRET || 'default-secret'}`

@@ -24,7 +24,7 @@ export const ProjectSelector = ({
       sortBy: "VerticalName",
       sortDirection: "ASC",
     },
-    fetchPolicy: "cache-first",
+    fetchPolicy: "network-only",
   });
 
   const renderIcon = (name: string) => {

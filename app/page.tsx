@@ -26,6 +26,32 @@ type Vehicle = {
   endDate?: string;
 };
 
+type StatsItem = {
+  label: string;
+  value: number;
+  color?: string;
+};
+
+type DashboardSummary = {
+  success: boolean;
+  totalVehicles: number;
+  activeVehicles: number;
+  inactiveVehicles: number;
+  uniqueCompanies: number;
+  uniqueResellers: number;
+  uniqueProjects: number;
+  uniqueServers: number;
+  uniqueRegions: number;
+  resellerOptions: string[];
+  companyStats: StatsItem[];
+  resellerStats: StatsItem[];
+  projectStats: StatsItem[];
+  serverStats: StatsItem[];
+  statusData: StatsItem[];
+  timestamp: string;
+  lastUpdated: string;
+};
+
 // Enhanced PieChart with better styling
 const PieChart = ({ data, title, colors }: { data: { label: string; value: number }[]; title: string; colors: string[] }) => {
   const total = data.reduce((sum, item) => sum + item.value, 0);
@@ -192,22 +218,8 @@ const ServerProjectDisplay = ({ title, data, type }: { title: string; data: { la
 };
 
 // Status Distribution Component with proper status handling
-const StatusDistribution = ({ vehicles }: { vehicles: Vehicle[] }) => {
-  // Define status categories based on InActiveDays
-  const statusCategories = [
-    { label: "Active (Under 24 hours)", range: [0, 0], color: "#10B981" },
-    { label: "Recently Inactive (1-7 days)", range: [1, 7], color: "#F59E0B" },
-    { label: "Inactive (8-30 days)", range: [8, 30], color: "#EF4444" },
-    { label: "Long Inactive (30-60 days)", range: [30, 60], color: "#8B5CF6" },
-    { label: "Very Long Inactive (60-90 days)", range: [60, 90], color: "#EC4899" },
-    { label: "Extremely Long Inactive (90+ days)", range: [90, Infinity], color: "#6B7280" }
-  ];
-
-  const statusData = statusCategories.map(category => ({
-    label: category.label,
-    value: vehicles.filter(v => v.InActiveDays >= category.range[0] && v.InActiveDays <= category.range[1]).length,
-    color: category.color
-  })).filter(item => item.value > 0);
+const StatusDistribution = ({ statusData, totalVehicles }: { statusData: StatsItem[]; totalVehicles: number }) => {
+  const total = totalVehicles || statusData.reduce((sum, d) => sum + d.value, 0);
 
   return (
     <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all duration-500">
@@ -219,11 +231,10 @@ const StatusDistribution = ({ vehicles }: { vehicles: Vehicle[] }) => {
         <div className="relative w-64 h-64">
           <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
             {statusData.map((item, index) => {
-              const total = statusData.reduce((sum, d) => sum + d.value, 0);
-              const percentage = (item.value / total) * 100;
+              const percentage = total > 0 ? (item.value / total) * 100 : 0;
               const previousPercentages = statusData
                 .slice(0, index)
-                .reduce((sum, d) => sum + (d.value / total) * 100, 0);
+                .reduce((sum, d) => sum + (total > 0 ? (d.value / total) * 100 : 0), 0);
               const startAngle = (previousPercentages / 100) * 360;
               const endAngle = ((previousPercentages + percentage) / 100) * 360;
               
@@ -248,7 +259,7 @@ const StatusDistribution = ({ vehicles }: { vehicles: Vehicle[] }) => {
           </svg>
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <div className="text-4xl font-black text-gray-900">{vehicles.length.toLocaleString()}</div>
+              <div className="text-4xl font-black text-gray-900">{total.toLocaleString()}</div>
               <div className="text-sm text-gray-600 font-semibold">Total</div>
             </div>
           </div>
@@ -266,7 +277,7 @@ const StatusDistribution = ({ vehicles }: { vehicles: Vehicle[] }) => {
             </div>
             <div className="text-right">
               <div className="font-black text-gray-900 text-xl">{item.value.toLocaleString()}</div>
-              <div className="text-xs text-gray-600 font-medium">{((item.value / vehicles.length) * 100).toFixed(1)}%</div>
+              <div className="text-xs text-gray-600 font-medium">{total > 0 ? ((item.value / total) * 100).toFixed(1) : '0.0'}%</div>
             </div>
           </div>
         ))}
@@ -276,33 +287,30 @@ const StatusDistribution = ({ vehicles }: { vehicles: Vehicle[] }) => {
 };
 
 const AnalyticsDashboard = () => {
-  const [allVehicles, setAllVehicles] = useState<Vehicle[]>([]);
+  const [dashboardData, setDashboardData] = useState<DashboardSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedReseller, setSelectedReseller] = useState<string>('');
-  const [resellerOptions, setResellerOptions] = useState<string[]>([]);
 
   // Fetch all vehicles for analytics
   useEffect(() => {
-    const fetchAllData = async () => {
+    const fetchSummary = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch('/api/vehicles/stored?page=1&pageSize=999999');
+        const searchParams = new URLSearchParams();
+        if (selectedReseller) {
+          searchParams.set('reseller', selectedReseller);
+        }
+
+        const response = await fetch(`/api/dashboard/summary?${searchParams.toString()}`, {
+          cache: 'no-store'
+        });
         const data = await response.json();
         if (data.success) {
-          setAllVehicles(data.data);
-          
-          // Extract unique resellers for dropdown
-          const uniqueResellers = Array.from(
-            new Set(data.data.map((vehicle: Vehicle) => vehicle.resellerName))
-          )
-            .filter((resellerName): resellerName is string => Boolean(resellerName))
-            .sort();
-          
-          setResellerOptions(uniqueResellers);
+          setDashboardData(data);
         }
-    } catch (error) {
-        console.error('Error fetching data for analytics:', error);
-    } finally {
+      } catch (error) {
+        console.error('Error fetching dashboard summary:', error);
+      } finally {
         setIsLoading(false);
       }
     };
@@ -312,6 +320,7 @@ const AnalyticsDashboard = () => {
       try {
         const response = await fetch('/api/cron/init', {
           method: 'POST',
+          cache: 'no-store',
           headers: {
             'Content-Type': 'application/json'
           }
@@ -323,81 +332,39 @@ const AnalyticsDashboard = () => {
         } else {
           console.log('Cron job already running or failed to initialize');
         }
-    } catch (error) {
+      } catch (error) {
         console.log('Error initializing cron job:', error);
       }
     };
 
-    fetchAllData();
+    fetchSummary();
     initializeCronJob();
-  }, []);
+  }, [selectedReseller]);
 
-  if (isLoading) {
-  return (
+  if (isLoading || !dashboardData) {
+    return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 p-6">
-      <div className="max-w-7xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-center h-96">
             <div className="flex flex-col items-center gap-4">
               <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent"></div>
               <p className="text-lg font-medium text-gray-600">Loading amazing analytics...</p>
+            </div>
           </div>
         </div>
-            </div>
       </div>
     );
   }
 
-  // Filter vehicles by selected reseller
-  const filteredVehicles = selectedReseller 
-    ? allVehicles.filter(v => v.resellerName === selectedReseller)
-    : allVehicles;
-
-  // Calculate analytics
-  const totalVehicles = filteredVehicles.length;
-  const activeVehicles = filteredVehicles.filter(v => v.InActiveDays === 0).length;
-  const inactiveVehicles = totalVehicles - activeVehicles;
-  
-  // Company distribution
-  const companyStats = Object.entries(
-    filteredVehicles.reduce((acc, v) => {
-      acc[v.companyName] = (acc[v.companyName] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
-  )
-    .map(([company, count]) => ({ label: company, value: count }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
-
-  // Reseller distribution
-  const resellerStats = Object.entries(
-    filteredVehicles.reduce((acc, v) => {
-      acc[v.resellerName] = (acc[v.resellerName] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
-  )
-    .map(([reseller, count]) => ({ label: reseller, value: count }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8); // Show top 8 resellers
-
-  // Project distribution
-  const projectStats = Object.entries(
-    filteredVehicles.reduce((acc, v) => {
-      acc[v.projectName] = (acc[v.projectName] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
-  )
-    .map(([project, count]) => ({ label: project, value: count }))
-    .sort((a, b) => b.value - a.value);
-
-  // Server distribution
-  const serverStats = Object.entries(
-    filteredVehicles.reduce((acc, v) => {
-      acc[v.ip] = (acc[v.ip] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
-  )
-    .map(([server, count]) => ({ label: server, value: count }))
-    .sort((a, b) => b.value - a.value);
+  const totalVehicles = dashboardData.totalVehicles;
+  const activeVehicles = dashboardData.activeVehicles;
+  const inactiveVehicles = dashboardData.inactiveVehicles;
+  const companyStats = dashboardData.companyStats;
+  const resellerStats = dashboardData.resellerStats;
+  const projectStats = dashboardData.projectStats;
+  const serverStats = dashboardData.serverStats;
+  const resellerOptions = dashboardData.resellerOptions;
+  const uniqueRegions = dashboardData.uniqueRegions;
 
   const pieColors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
 
@@ -449,11 +416,11 @@ const AnalyticsDashboard = () => {
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-3 text-sm text-gray-600 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200">
                 <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                Last updated: {formatDateTime(new Date().toISOString())}
+                Last updated: {formatDateTime(dashboardData.lastUpdated)}
               </div>
               <div className="flex items-center gap-3 text-sm text-gray-600 bg-white px-4 py-2 rounded-full shadow-sm border border-gray-200">
                 <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                {allVehicles.length.toLocaleString()} Total Records
+                {dashboardData.totalVehicles.toLocaleString()} Total Records
               </div>
             </div>
             
@@ -507,7 +474,7 @@ const AnalyticsDashboard = () => {
           />
           <StatCard
             title="Unique Companies"
-            value={new Set(filteredVehicles.map(v => v.companyName)).size.toLocaleString()}
+            value={dashboardData.uniqueCompanies.toLocaleString()}
             icon={
               <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -517,7 +484,7 @@ const AnalyticsDashboard = () => {
           />
           <StatCard
             title="Unique Resellers"
-            value={new Set(filteredVehicles.map(v => v.resellerName)).size.toLocaleString()}
+            value={dashboardData.uniqueResellers.toLocaleString()}
             icon={
               <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -530,7 +497,7 @@ const AnalyticsDashboard = () => {
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12">
           {/* Status Distribution */}
-          <StatusDistribution vehicles={filteredVehicles} />
+          <StatusDistribution statusData={dashboardData.statusData} totalVehicles={totalVehicles} />
 
           {/* Reseller Distribution */}
           <PieChart
@@ -575,17 +542,17 @@ const AnalyticsDashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
           <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all duration-500">
             <h3 className="text-xl font-black text-blue-600 mb-4">Unique Regions</h3>
-            <div className="text-5xl font-black text-gray-900 mb-3">{new Set(filteredVehicles.map(v => v.region)).size.toLocaleString()}</div>
+            <div className="text-5xl font-black text-gray-900 mb-3">{uniqueRegions.toLocaleString()}</div>
             <p className="text-gray-600 text-lg font-medium">Geographic coverage</p>
               </div>
           <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all duration-500">
             <h3 className="text-xl font-black text-green-600 mb-4">Unique Projects</h3>
-            <div className="text-5xl font-black text-gray-900 mb-3">{new Set(filteredVehicles.map(v => v.projectName)).size.toLocaleString()}</div>
+            <div className="text-5xl font-black text-gray-900 mb-3">{dashboardData.uniqueProjects.toLocaleString()}</div>
             <p className="text-gray-600 text-lg font-medium">Active projects</p>
             </div>
           <div className="bg-white rounded-3xl shadow-xl p-8 border border-gray-200 hover:shadow-2xl hover:scale-105 transition-all duration-500">
             <h3 className="text-xl font-black text-purple-600 mb-4">Unique Servers</h3>
-            <div className="text-5xl font-black text-gray-900 mb-3">{new Set(allVehicles.map(v => v.ip)).size.toLocaleString()}</div>
+            <div className="text-5xl font-black text-gray-900 mb-3">{dashboardData.uniqueServers.toLocaleString()}</div>
             <p className="text-gray-600 text-lg font-medium">Server infrastructure</p>
           </div>
         </div>

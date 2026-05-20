@@ -8,7 +8,7 @@ export const RoleModulesSelector = ({ selectedRole, setSelectedRole, modules }: 
         data: RolesData,
         loading,
     } = useQuery(GET_ALL_ROLES, {
-        fetchPolicy: "cache-first",
+        fetchPolicy: "network-only",
     });
 
     useEffect(() => {

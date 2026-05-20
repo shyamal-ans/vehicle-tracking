@@ -1,77 +1,125 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readErpData } from '@/Utils/dataStorage';
+
+const credentials = {
+  username: 'shyamal@ansgujarat.in',
+  password: 'Horizon@0906',
+};
+
+const JSESSIONID = '7120FB4EB2CE3E647CE658410348647D';
+
+async function getAuthCode() {
+  const res = await fetch('http://13.233.185.89/webservice?token=generateAccessToken', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cookie': `JSESSIONID=${JSESSIONID}`,
+    },
+    body: JSON.stringify(credentials),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Auth token failed: ${res.status} - ${errText}`);
+  }
+
+  const data = await res.json();
+  const token = data?.data?.token;
+  if (!token) throw new Error('Auth token not found');
+  return token;
+}
+
+async function fetchLiveErpData() {
+  const token = await getAuthCode();
+  const res = await fetch('http://13.233.185.89/webservice?token=getERPVehicleData', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'auth-code': token,
+      'Cookie': `JSESSIONID=${JSESSIONID}`,
+    },
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Live ERP fetch failed: ${res.status} - ${errText}`);
+  }
+
+  const data = await res.json();
+  if (!data?.data || !Array.isArray(data.data)) {
+    return [];
+  }
+
+  return data.data;
+}
 
 export async function GET(request: NextRequest) {
+  const startTime = Date.now();
+  const { searchParams } = new URL(request.url);
+  const page = Number(searchParams.get('page') || '1');
+  const pageSize = Number(searchParams.get('pageSize') || '100');
+
   try {
-    const startTime = Date.now();
-    
-    // Load all data from JSON file
-    console.log('🔄 Loading all ERP data from JSON file...');
-    const data = await readErpData();
-    
-    if (!data) {
-      return NextResponse.json({
-        success: true,
-        data: [],
-        pagination: {
-          page: 1,
-          pageSize: 0,
-          total: 0,
-          totalPages: 1,
-          hasMore: false
-        },
-        metadata: null,
-        timestamp: new Date().toISOString(),
-        loadTime: `${Date.now() - startTime}ms`,
-        source: 'file'
-      });
-    }
-    
+    console.log('🔄 Fetching live ERP vehicle data from external API...');
+    const vehicles = await fetchLiveErpData();
+    const total = vehicles.length;
+    const safePageSize = pageSize > 0 ? pageSize : total || 1;
+    const startIndex = (page > 0 ? page - 1 : 0) * safePageSize;
+    const pagedData = vehicles.slice(startIndex, startIndex + safePageSize);
+    const totalPages = safePageSize > 0 ? Math.max(1, Math.ceil(total / safePageSize)) : 1;
     const loadTime = Date.now() - startTime;
-    console.log(`⚡ API loaded all ${data.vehicles.length} ERP vehicles from JSON file in ${loadTime}ms`);
-    
+
     const responseData = {
       success: true,
-      data: data.vehicles, // Return all vehicles
+      data: pagedData,
       pagination: {
-        page: 1,
-        pageSize: data.vehicles.length,
-        total: data.vehicles.length,
-        totalPages: 1,
-        hasMore: false
+        page: page > 0 ? page : 1,
+        pageSize: safePageSize,
+        total,
+        totalPages,
+        hasMore: startIndex + safePageSize < total,
       },
       metadata: {
-        lastUpdated: data.lastUpdated,
-        totalRecords: data.vehicles.length,
-        metadata: data.metadata
+        lastUpdated: new Date().toISOString(),
+        totalRecords: total,
+        metadata: {
+          source: 'live',
+          fetchedAt: new Date().toISOString(),
+        },
       },
       timestamp: new Date().toISOString(),
       loadTime: `${loadTime}ms`,
-      source: 'file'
+      source: 'live',
     };
 
-    // Return without caching to ensure fresh data
     return NextResponse.json(responseData, {
       headers: {
-        'Cache-Control': 'public, max-age=300', // Cache for 5 minutes in browser
-      }
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        Pragma: 'no-cache',
+      },
     });
-
   } catch (error) {
-    console.error('Error fetching stored ERP vehicles:', error);
-    
+    console.error('Error fetching live ERP vehicle data:', error);
     return NextResponse.json({
-      success: true,
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error fetching live ERP vehicle data',
       data: [],
       pagination: {
-        page: 1,
-        pageSize: 0,
+        page: page > 0 ? page : 1,
+        pageSize: pageSize > 0 ? pageSize : 0,
         total: 0,
         totalPages: 1,
-        hasMore: false
+        hasMore: false,
       },
       metadata: null,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+    }, {
+      status: 500,
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        Pragma: 'no-cache',
+      },
     });
   }
 }

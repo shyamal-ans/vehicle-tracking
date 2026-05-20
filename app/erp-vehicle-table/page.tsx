@@ -87,7 +87,9 @@ const ErpVehicleTrackingDashboard = () => {
       setIsLoadingStored(true);
       const startTime = Date.now();
       
-      const response = await fetch('/api/erp-vehicles/stored');
+      const response = await fetch('/api/erp-vehicles/stored', {
+        cache: 'no-store',
+      });
       const data = await response.json();
       
       if (!data.success) {
@@ -137,7 +139,9 @@ const ErpVehicleTrackingDashboard = () => {
       setIsLoadingStored(true);
       const startTime = Date.now();
       
-      const response = await fetch('/api/erp-vehicles/stored');
+      const response = await fetch('/api/erp-vehicles/stored', {
+        cache: 'no-store',
+      });
       const data = await response.json();
       
       if (!data.success) {
@@ -414,6 +418,7 @@ const ErpVehicleTrackingDashboard = () => {
       
       const response = await fetch('/api/cron/fetch-erp-vehicles', {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ overwrite: true })
       });

@@ -3,6 +3,8 @@ import cron from 'node-cron';
 import fs from 'fs';
 import path from 'path';
 
+export const runtime = 'nodejs';
+
 // In-memory storage for cron jobs (in production, use a database)
 let cronJobs: { [key: string]: cron.ScheduledTask } = {};
 
@@ -46,7 +48,8 @@ async function fetchVehicleData() {
     console.log('🚀 Starting scheduled vehicle data fetch...');
     console.log('🔗 Calling API endpoint: /api/cron/fetch-vehicles');
     
-    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/cron/fetch-vehicles`, {
+    const defaultOrigin = process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${process.env.PORT || 3001}`;
+    const response = await fetch(`${defaultOrigin}/api/cron/fetch-vehicles`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.CRON_SECRET || 'default-secret'}`,
