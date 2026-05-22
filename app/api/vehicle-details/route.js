@@ -48,26 +48,60 @@ export async function POST(request) {
     const token = await getAuthCode();
     const payload = await request.json();
 
-    // Updated 2026-03-24: Admin data API call.
-    const res = await fetch('http://13.233.185.89/webservice?token=getAdminData', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'auth-code': token,
-        'Cookie': DATA_COOKIE,
-      },
-      body: JSON.stringify(payload),
-    });
+    const fetchAdminData = async (adminPayload) => {
+      const res = await fetch('http://13.233.185.89/webservice?token=getAdminData', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'auth-code': token,
+          'Cookie': DATA_COOKIE,
+        },
+        body: JSON.stringify(adminPayload),
+      });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      return NextResponse.json(
-        { error: `Data fetch failed: ${res.status} - ${errText}` },
-        { status: 500 }
-      );
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Data fetch failed: ${res.status} - ${errText}`);
+      }
+
+      return res.json();
+    };
+
+    if (payload?.exportAll) {
+      const pageSize = Number(payload.pageSize || 100);
+      const allData = [];
+      let pageNo = 1;
+
+      while (true) {
+        const pageData = await fetchAdminData({
+          ...payload,
+          exportAll: undefined,
+          pageNo: String(pageNo),
+          pageSize: String(pageSize),
+        });
+        const rows = Array.isArray(pageData?.data) ? pageData.data : [];
+
+        allData.push(...rows);
+
+        const totalPages = Number(pageData?.totalPages || 0);
+        if (rows.length === 0 || rows.length < pageSize || (totalPages > 0 && pageNo >= totalPages)) {
+          break;
+        }
+
+        pageNo += 1;
+      }
+
+      return NextResponse.json({
+        success: true,
+        result: 1,
+        data: allData,
+        totalRecords: allData.length,
+        totalPages: 1,
+      });
     }
 
-    const data = await res.json();
+    // Updated 2026-03-24: Admin data API call.
+    const data = await fetchAdminData(payload);
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });

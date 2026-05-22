@@ -640,8 +640,42 @@ const VehicleTrackingDashboard = () => {
           return selectedRows.has(rowId);
         });
       } else {
-        // Export all filtered data (same logic as display)
-        let filteredData = searchableVehicles;
+        const response = await fetch('/api/vehicle-details', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...getAdminDataPayload(),
+            exportAll: true,
+          }),
+        });
+        const data = await response.json();
+
+        const isSuccess =
+          data?.success === true || data?.result === 1 || Array.isArray(data?.data);
+        if (!response.ok || !isSuccess) {
+          throw new Error(data?.message || data?.error || 'Failed to fetch export data');
+        }
+
+        // Export all filtered data from the single export API response.
+        let filteredData: Array<Vehicle & { searchText: string }> = (Array.isArray(data?.data) ? data.data : []).map((vehicle: Vehicle, index: number) => ({
+          ...vehicle,
+          uniqueId: `${vehicle.imeiNo}-${vehicle.vehicleNo}-${index}`,
+          searchText: [
+            vehicle.vehicleName,
+            vehicle.vehicleNo,
+            vehicle.imeiNo,
+            vehicle.simNo,
+            vehicle.companyName,
+            vehicle.branchName,
+            vehicle.projectName,
+            vehicle.resellerName,
+            vehicle.adminName,
+            vehicle.region,
+            vehicle.projectId,
+            vehicle.username
+          ].join(' ').toLowerCase()
+        }));
         
         // Apply search filter
         if (debouncedSearchQuery) {
@@ -711,7 +745,7 @@ const VehicleTrackingDashboard = () => {
       console.error('Error exporting vehicles:', error);
       alert('Error exporting vehicles. Please try again.');
     }
-  }, [selectedRows, allVehicles, searchableVehicles, debouncedSearchQuery, filters]);
+  }, [selectedRows, allVehicles, getAdminDataPayload, debouncedSearchQuery, filters]);
 
   // Optimized reset filters function
   const resetFilters = useCallback(() => {
