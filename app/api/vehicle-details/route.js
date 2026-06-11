@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 // Updated 2026-03-24: Credentials for token API.
 const credentials = {
   username: 'shyamal@ansgujarat.in',
-  password: 'Horizon@0906',
+  password: 'Shyamal@1166',
 };
 
 // Updated 2026-03-24: Cookies required by token/data APIs.
