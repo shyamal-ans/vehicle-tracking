@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
                 },
                 body: JSON.stringify({
                     username: 'shyamal@ansgujarat.in',
-                    password: 'Horizon@0906'
+                    password: 'Shyamal@1166'
                 })
             });
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const credentials = {
   username: 'shyamal@ansgujarat.in',
-  password: 'Horizon@0906',
+  password: 'Shyamal@1166',
 };
 
 const JSESSIONID = '7120FB4EB2CE3E647CE658410348647D';
